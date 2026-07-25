@@ -1,0 +1,2 @@
+27aff938eae28c01e098fad5d139dec33a9e46c7c4b62e9399465208a9f7d770  craftmake_0.1.0-dev_linux_amd64.tar.gz
+6333f35a8ea11a3943ee33b1a387c21414b8583ac77e0b6f8090874bfa51123e  craftmake_0.1.0-dev_linux_arm64.tar.gz

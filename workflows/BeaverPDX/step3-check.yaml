@@ -1,0 +1,254 @@
+name: BeaverPDX step3 check
+version: 1
+on:
+  xdxtools:
+    workflow: BeaverPDX
+    phase: step3-check
+    modes: [RRBS, WGBS, BSSEQ]
+defaults:
+  shell: bash
+  observability:
+    metrics: task
+    capture_stdout: true
+    capture_stderr: true
+    compress_success_logs: true
+jobs:
+  sample_artifacts:
+    name: Validate BeaverPDX step3 sample artifacts
+    scope: sample
+    dimensions: [sample]
+    inputs:
+      coverage: "${{ config.directories.methylation_call }}/${{ sample.id }}_nsort.bismark.cov.gz"
+      name_sorted_bam: "${{ config.directories.bsmap.main }}/${{ sample.id }}_nsort.bam"
+      filtered_bam: "${{ config.directories.bsmap.main }}/Filtered_bams/${{ sample.id }}_fixed_${{ config.workflow.species.graft }}_Filtered.bam"
+      trim_report_r1: "${{ config.output.trim_dir }}/${{ sample.id }}_R1.fastq.gz_trimming_report.txt"
+      trim_report_r2: "${{ config.output.trim_dir }}/${{ sample.id }}_R2.fastq.gz_trimming_report.txt"
+      fastqc_before_r1: "${{ config.directories.qc.before }}/${{ sample.id }}_R1_fqc/fastqc_data.txt"
+      fastqc_before_r2: "${{ config.directories.qc.before }}/${{ sample.id }}_R2_fqc/fastqc_data.txt"
+      fastqc_after_r1: "${{ config.directories.qc.after }}/${{ sample.id }}_val_1_fqc/fastqc_data.txt"
+      fastqc_after_r2: "${{ config.directories.qc.after }}/${{ sample.id }}_val_2_fqc/fastqc_data.txt"
+    outputs:
+      ready: "${{ config.directories.sid_log }}/step3-check/${{ sample.id }}.ready"
+    resources:
+      cores: 1
+      memory: 1G
+      partition: cpu
+    steps:
+      - name: Record validated step3 sample artifacts
+        run: |
+          mkdir -p "$(dirname '${{ outputs.ready }}')"
+          touch '${{ outputs.ready }}'
+
+  species_qc_artifacts:
+    name: Validate BeaverPDX species mapping QC artifacts
+    scope: sample
+    dimensions: [sample, species]
+    inputs:
+      sorted_bam: "${{ config.directories.bsmap.main }}/${{ sample.id }}_${{ species.name }}.bam"
+      qualimap_report: "${{ config.directories.qualimap }}/${{ sample.id }}_${{ species.name }}/qualimapReport.html"
+    outputs:
+      ready: "${{ config.directories.sid_log }}/step3-check/${{ sample.id }}_${{ species.name }}_qc.ready"
+    resources:
+      cores: 1
+      memory: 1G
+      partition: cpu
+    steps:
+      - name: Record validated species QC artifacts
+        run: |
+          mkdir -p "$(dirname '${{ outputs.ready }}')"
+          touch '${{ outputs.ready }}'
+
+  prepare_methrix_reference:
+    name: Prepare PDX graft Methrix CpG reference
+    scope: global
+    dimensions: []
+    inputs:
+      genome: "${{ config.reference.graft_fasta }}"
+    outputs:
+      reference_cpgs: "${{ config.directories.methylation_call }}/methrixh5/reference_cpgs.ron"
+    resources:
+      cores: 1
+      memory: 4G
+      partition: cpu
+    steps:
+      - name: Prepare CpG reference
+        run: |
+          mkdir -p "$(dirname '${{ outputs.reference_cpgs }}')"
+          reference_path='${{ inputs.genome }}'
+          output_path='${{ outputs.reference_cpgs }}'
+          methrix_cli="${METHRIX_CLI:-methrix-cli}"
+          methrix_extract_command=("$methrix_cli" extract-cpgs)
+          if "$methrix_cli" extract-cp-gs --help >/dev/null 2>&1; then
+            methrix_extract_command=("$methrix_cli" extract-cp-gs)
+          fi
+          reference_directory="$(dirname "$reference_path")"
+          genome_key='${{ config.workflow.species.graft }}'
+          annotation_path=''
+          for candidate in "$reference_directory/$genome_key.gtf" "$reference_directory/$genome_key.gtf.gz"; do
+            if [ -f "$candidate" ]; then annotation_path="$candidate"; break; fi
+          done
+          if [ -z "$annotation_path" ]; then
+            for candidate in "$reference_directory"/*.gtf "$reference_directory"/*.gtf.gz; do
+              if [ -f "$candidate" ]; then annotation_path="$candidate"; break; fi
+            done
+          fi
+          if [ -n "$annotation_path" ]; then cp -f "$annotation_path" "$(dirname "$output_path")/"; fi
+          if [[ "$reference_path" == *.ron || "$reference_path" == *.con ]]; then
+            cp -f "$reference_path" "$output_path"
+          elif [ -f "${reference_path}.ron" ]; then
+            cp -f "${reference_path}.ron" "$output_path"
+          else
+            reference_name="$(basename "$reference_path")"
+            reference_name="${reference_name%.gz}"
+            reference_name="${reference_name%.fa}"
+            reference_name="${reference_name%.fasta}"
+            reference_name="${reference_name%.fna}"
+            nearby_reference="$reference_directory/${reference_name}.ron"
+            if [ -f "$nearby_reference" ]; then
+              cp -f "$nearby_reference" "$output_path"
+            else
+              "${methrix_extract_command[@]}" --genome "$reference_path" --output "$output_path"
+              if grep -q 'cpgs: \[\]' "$output_path"; then
+                contigs=()
+                while IFS= read -r header; do
+                  if [[ "$header" == '>'* ]]; then
+                    contig="${header#>}"
+                    contig="${contig%%[[:space:]]*}"
+                    contigs+=("$contig")
+                  fi
+                done < <(if [[ "$reference_path" == *.gz ]]; then gzip -cd "$reference_path"; else cat "$reference_path"; fi)
+                if [ "${#contigs[@]}" -eq 0 ]; then
+                  echo "no FASTA contigs found in $reference_path" >&2
+                  exit 1
+                fi
+                contig_arguments=()
+                for contig in "${contigs[@]}"; do
+                  contig_arguments+=(--contigs "$contig")
+                done
+                "${methrix_extract_command[@]}" --genome "$reference_path" --output "$output_path" "${contig_arguments[@]}"
+              fi
+            fi
+          fi
+
+  create_methrix_object:
+    name: Build BeaverPDX Methrix object
+    scope: global
+    dimensions: []
+    inputs:
+      sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
+      reference_cpgs: "${{ jobs.prepare_methrix_reference.outputs.reference_cpgs }}"
+    outputs:
+      methrix_data: "${{ config.directories.methylation_call }}/methrixh5/methrix_data.h5"
+      coverage_report: "${{ config.directories.methylation_call }}/methrixh5/CpG_coverage.xlsx"
+    resources:
+      cores: 10
+      memory: 34G
+      partition: cpu
+    steps:
+      - name: Build Methrix object
+        run: |
+          mkdir -p '${{ config.directories.methylation_call }}/methrixh5'
+          methrix_cli="${METHRIX_CLI:-methrix-cli}"
+          "$methrix_cli" process --input '${{ config.directories.methylation_call }}' --output '${{ config.directories.methylation_call }}/methrixh5' --genome '${{ inputs.reference_cpgs }}' --threads '${{ resources.cores }}'
+
+  bismark_report:
+    name: Build PDX graft Bismark sample report
+    scope: sample
+    dimensions: [sample]
+    inputs:
+      sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
+      alignment: "${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}/${{ sample.id }}_val_1_bismark_bt2_pe.bam"
+      alignment_report: "${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}/${{ sample.id }}_val_1_bismark_bt2_PE_report.txt"
+      splitting_report: "${{ config.directories.methylation_call }}/${{ sample.id }}_nsort_splitting_report.txt"
+      mbias_report: "${{ config.directories.methylation_call }}/${{ sample.id }}_nsort.M-bias.txt"
+      nucleotide_report: "${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}/${{ sample.id }}_val_1_bismark_bt2_pe.nucleotide_stats.txt"
+    outputs:
+      report: "${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}/${{ sample.id }}.html"
+    resources:
+      cores: 10
+      memory: 16G
+      partition: cpu
+    steps:
+      - name: Run Bismark report
+        environment: xdxtools-core
+        run: |
+          mkdir -p '${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}'
+          bismark2report --dir '${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}' --output '${{ sample.id }}.html' --alignment_report '${{ inputs.alignment_report }}' --splitting_report '${{ inputs.splitting_report }}' --mbias_report '${{ inputs.mbias_report }}' --nucleotide_report '${{ inputs.nucleotide_report }}'
+
+  bismark_summary:
+    name: Build PDX graft Bismark summary
+    scope: global
+    dimensions: []
+    inputs:
+      sample_reports: "${{ jobs.bismark_report.outputs.report }}"
+    outputs:
+      report: "${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}/bismark_summary_report.html"
+    resources:
+      cores: 10
+      memory: 16G
+      partition: cpu
+    steps:
+      - name: Run Bismark summary
+        environment: xdxtools-core
+        run: |
+          cd '${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}'
+          bismark2summary *_val_1_bismark_bt2_pe.bam
+
+  qc_summary:
+    name: Build BeaverPDX QC summary
+    scope: global
+    dimensions: []
+    inputs:
+      sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
+      species_qc_artifacts: "${{ jobs.species_qc_artifacts.outputs.ready }}"
+      methrix_coverage: "${{ jobs.create_methrix_object.outputs.coverage_report }}"
+      self_config: "${{ config.directories.selfconfig }}/config.yaml"
+    outputs:
+      report: "${{ config.directories.qc_summary }}/qc_summary.xlsx"
+    resources:
+      cores: 5
+      memory: 8G
+      partition: cpu
+    steps:
+      - name: Run QC summary
+        environment: xdxtools-core
+        run: |
+          mkdir -p '${{ config.directories.qc_summary }}'
+          source_config='${{ config.directories.selfconfig }}/config.yaml'
+          qctb_config="$(mktemp "${TMPDIR:-/tmp}/craftmake-qctb-pdx.XXXXXX.yaml")"
+          trap 'rm -f "$qctb_config"' EXIT
+          python - "$source_config" "$qctb_config" '${{ config.workflow.species.graft }}' <<'PY'
+          import sys
+          import yaml
+
+          source_path, output_path, graft_species = sys.argv[1:]
+          with open(source_path, "r", encoding="utf-8") as source_file:
+              configuration = yaml.safe_load(source_file)
+          workflow_configuration = configuration.setdefault("workflow", {})
+          species_configuration = workflow_configuration.setdefault("species", {})
+          species_configuration["name"] = graft_species
+          with open(output_path, "w", encoding="utf-8") as output_file:
+              yaml.safe_dump(configuration, output_file, sort_keys=False)
+          PY
+          qctb --config "$qctb_config" --output '${{ outputs.report }}'
+
+  step3_checker:
+    name: Check BeaverPDX step3
+    scope: global
+    dimensions: []
+    inputs:
+      sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
+      methrix_data: "${{ jobs.create_methrix_object.outputs.methrix_data }}"
+      bismark_summary: "${{ jobs.bismark_summary.outputs.report }}"
+      qc_summary: "${{ jobs.qc_summary.outputs.report }}"
+    outputs:
+      success_marker: "${{ config.directories.sid_log }}/step3_success.txt"
+    resources:
+      cores: 5
+      memory: 2G
+      partition: cpu
+    steps:
+      - name: Write step3 success marker
+        run: |
+          mkdir -p "$(dirname '${{ outputs.success_marker }}')"
+          touch '${{ outputs.success_marker }}'

@@ -1,0 +1,59 @@
+name: BeaverRNASEQPDX step3
+version: 1
+on:
+  xdxtools:
+    workflow: BeaverRNASEQPDX
+    phase: step3
+    modes: [RNASEQ]
+defaults:
+  shell: bash
+  environment: xdxtools-core
+  observability:
+    metrics: task
+    capture_stdout: true
+    capture_stderr: true
+    compress_success_logs: true
+jobs:
+  count_expression:
+    name: Count filtered graft RNA-seq expression
+    scope: sample
+    dimensions: [sample]
+    inputs:
+      filtered_bam: "${{ config.directories.bsmap.main }}/Filtered_bams/${{ sample.id }}_fixed_${{ config.workflow.species.graft }}_Filtered.bam"
+      annotation: "${{ config.reference.rnaseq.graft_gtf }}"
+    outputs:
+      counts: "${{ config.directories.methylation_call }}/${{ sample.id }}_${{ config.workflow.species.graft }}.txt"
+    resources:
+      cores: 5
+      memory: 16G
+      partition: cpu
+    steps:
+      - name: Run HTSeq count on filtered graft BAM
+        run: |
+          mkdir -p "$(dirname '${{ outputs.counts }}')"
+          htseq-count -f bam -r pos -s yes -t exon -i gene_id -m intersection-nonempty '${{ inputs.filtered_bam }}' '${{ inputs.annotation }}' > '${{ outputs.counts }}'
+
+  rnaseq_splicing:
+    name: Run BeaverRNASEQPDX splicing analysis
+    scope: global
+    dimensions: []
+    inputs:
+      sample_counts: "${{ jobs.count_expression.outputs.counts }}"
+      annotation: "${{ config.reference.rnaseq.graft_gtf }}"
+      pdata: "${{ config.directories.selfconfig }}/pdata.xlsx"
+    outputs:
+      success_marker: "${{ config.directories.bsmap.main }}/RNASplicing/RNASplicing_success.txt"
+    resources:
+      cores: 20
+      memory: 32G
+      partition: cpu
+    steps:
+      - name: Run or skip RNA-seq PDX splicing
+        run: |
+          mkdir -p "$(dirname '${{ outputs.success_marker }}')"
+          if [ '${{ config.metadata.group_levels }}' -ge 2 ]; then
+            gomats run --root '${{ config.directories.bsmap.main }}' --threads '${{ resources.cores }}' --pdata '${{ inputs.pdata }}' --seqlengthQC '${{ config.directories.qc.main }}' --gtf '${{ inputs.annotation }}' --pdxmode 1
+            printf 'RNASplicing_DONE\n' > '${{ outputs.success_marker }}'
+          else
+            printf 'RNASplicing_NOTRUN\n' > '${{ outputs.success_marker }}'
+          fi

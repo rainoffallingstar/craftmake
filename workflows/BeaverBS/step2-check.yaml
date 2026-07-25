@@ -1,0 +1,76 @@
+name: BeaverBS step2 check
+version: 1
+on:
+  xdxtools:
+    workflow: BeaverBS
+    phase: step2-check
+    modes: [RRBS, WGBS, BSSEQ]
+defaults:
+  shell: bash
+  environment: xdxtools-core
+  observability:
+    metrics: task
+    capture_stdout: true
+    capture_stderr: true
+    compress_success_logs: true
+jobs:
+  sample_artifacts:
+    name: Validate BeaverBS step2 sample artifacts
+    scope: sample
+    dimensions: [sample, species]
+    inputs:
+      bam: "${{ config.directories.bsmap.main }}/${{ sample.id }}_${{ species.name }}.bam"
+      bam_index: "${{ config.directories.bsmap.main }}/${{ sample.id }}_${{ species.name }}.bam.bai"
+      qualimap_html: "${{ config.directories.qualimap }}/${{ sample.id }}_${{ species.name }}/qualimapReport.html"
+      qualimap_pdf: "${{ config.directories.qualimap }}/${{ sample.id }}_${{ species.name }}/report.pdf"
+      gc_metrics: "${{ config.directories.qc.main }}/GCbias/${{ sample.id }}_${{ species.name }}/gc_bias_metrics.txt"
+      gc_chart: "${{ config.directories.qc.main }}/GCbias/${{ sample.id }}_${{ species.name }}/gc_bias_metrics.pdf"
+      gc_summary: "${{ config.directories.qc.main }}/GCbias/${{ sample.id }}_${{ species.name }}/summary_metrics.txt"
+    outputs:
+      ready: "${{ config.directories.sid_log }}/step2-check/${{ sample.id }}_${{ species.name }}.ready"
+    resources:
+      cores: 1
+      memory: 1G
+      partition: cpu
+    steps:
+      - name: Record validated sample artifacts
+        run: |
+          mkdir -p "$(dirname '${{ outputs.ready }}')"
+          touch '${{ outputs.ready }}'
+
+  multiqc:
+    name: Aggregate step2 quality reports
+    scope: global
+    dimensions: []
+    inputs:
+      sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
+    outputs:
+      report: "${{ config.directories.qc_summary }}/multiqc_report.html"
+    resources:
+      cores: 4
+      memory: 8G
+      partition: cpu
+    steps:
+      - name: Run MultiQC
+        run: |
+          mkdir -p '${{ config.directories.qc_summary }}'
+          multiqc '${{ config.directories.work }}' -o '${{ config.directories.qc_summary }}' -f
+
+  step2_checker:
+    name: Check BeaverBS step2
+    scope: global
+    dimensions: []
+    inputs:
+      sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
+      multiqc_report: "${{ jobs.multiqc.outputs.report }}"
+    outputs:
+      success_marker: "${{ config.directories.sid_log }}/step2_success.txt"
+    resources:
+      cores: 1
+      memory: 1G
+      partition: cpu
+    steps:
+      - name: Write step2 success marker
+        run: |
+          mkdir -p "$(dirname '${{ outputs.success_marker }}')"
+          touch '${{ outputs.success_marker }}'

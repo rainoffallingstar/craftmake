@@ -1,0 +1,125 @@
+name: BeaverRNA step2 check
+version: 1
+on:
+  xdxtools:
+    workflow: BeaverRNA
+    phase: step2-check
+    modes: [RNASEQ]
+defaults:
+  shell: bash
+  environment: xdxtools-core
+  observability:
+    metrics: task
+    capture_stdout: true
+    capture_stderr: true
+    compress_success_logs: true
+jobs:
+  sample_artifacts:
+    name: Validate BeaverRNA step1 and step2 artifacts
+    scope: sample
+    dimensions: [sample, species]
+    inputs:
+      counts: "${{ config.directories.methylation_call }}/${{ sample.id }}_${{ species.name }}.txt"
+      sorted_bam: "${{ config.directories.bsmap.main }}/${{ sample.id }}_${{ species.name }}.bam"
+      qualimap_report: "${{ config.directories.qualimap }}/${{ sample.id }}_${{ species.name }}/qualimapReport.html"
+      trim_report_r1: "${{ config.output.trim_dir }}/${{ sample.id }}_R1.fastq.gz_trimming_report.txt"
+      trim_report_r2: "${{ config.output.trim_dir }}/${{ sample.id }}_R2.fastq.gz_trimming_report.txt"
+      fastqc_before_r1: "${{ config.directories.qc.before }}/${{ sample.id }}_R1_fqc/fastqc_data.txt"
+      fastqc_before_r2: "${{ config.directories.qc.before }}/${{ sample.id }}_R2_fqc/fastqc_data.txt"
+      fastqc_after_r1: "${{ config.directories.qc.after }}/${{ sample.id }}_val_1_fqc/fastqc_data.txt"
+      fastqc_after_r2: "${{ config.directories.qc.after }}/${{ sample.id }}_val_2_fqc/fastqc_data.txt"
+    outputs:
+      ready: "${{ config.directories.sid_log }}/step2-check/${{ sample.id }}_${{ species.name }}.ready"
+    resources:
+      cores: 1
+      memory: 1G
+      partition: cpu
+    steps:
+      - name: Record validated RNA-seq artifacts
+        run: |
+          mkdir -p "$(dirname '${{ outputs.ready }}')"
+          touch '${{ outputs.ready }}'
+
+  construct_expression_matrix:
+    name: Construct BeaverRNA expression matrices
+    scope: global
+    dimensions: []
+    inputs:
+      sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
+    outputs:
+      count_matrix: "${{ config.directories.beta_matrix }}/matrix_count.txt"
+      normalized_matrix: "${{ config.directories.beta_matrix }}/matrix_norm.txt"
+    resources:
+      cores: 5
+      memory: 8G
+      partition: cpu
+    steps:
+      - name: Build expression matrices
+        run: |
+          mkdir -p '${{ config.directories.beta_matrix }}'
+          htseq2matrix --htseq_dir '${{ config.directories.methylation_call }}' --output_dir '${{ config.directories.beta_matrix }}' --postfix '_${{ config.workflow.species.graft }}.txt'
+
+  rnaseq_splicing:
+    name: Run BeaverRNA splicing analysis
+    scope: global
+    dimensions: []
+    inputs:
+      sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
+      annotation: "${{ config.reference.rnaseq.primary_gtf }}"
+    outputs:
+      success_marker: "${{ config.directories.bsmap.main }}/RNASplicing/RNASplicing_success.txt"
+    resources:
+      cores: 20
+      memory: 32G
+      partition: cpu
+    steps:
+      - name: Run or skip RNA splicing
+        run: |
+          mkdir -p "$(dirname '${{ outputs.success_marker }}')"
+          if [ '${{ config.metadata.group_levels }}' -ge 2 ]; then
+            gomats run --root '${{ config.directories.bsmap.main }}' --threads '${{ resources.cores }}' --pdata '${{ config.directories.selfconfig }}/pdata.xlsx' --seqlengthQC '${{ config.directories.qc.main }}' --gtf '${{ inputs.annotation }}' --pdxmode 0
+            printf 'RNASplicing_DONE\n' > '${{ outputs.success_marker }}'
+          else
+            printf 'RNASplicing_NOTRUN\n' > '${{ outputs.success_marker }}'
+          fi
+
+  qc_summary:
+    name: Build BeaverRNA QC summary
+    scope: global
+    dimensions: []
+    inputs:
+      sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
+      self_config: "${{ config.directories.selfconfig }}/config.yaml"
+    outputs:
+      report: "${{ config.directories.qc_summary }}/qc_summary.xlsx"
+    resources:
+      cores: 5
+      memory: 8G
+      partition: cpu
+    steps:
+      - name: Run RNA-seq QC summary
+        run: |
+          mkdir -p '${{ config.directories.qc_summary }}'
+          qctb --config '${{ inputs.self_config }}' --output '${{ outputs.report }}' --rnaseq
+
+  step2_checker:
+    name: Check BeaverRNA step2
+    scope: global
+    dimensions: []
+    inputs:
+      sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
+      count_matrix: "${{ jobs.construct_expression_matrix.outputs.count_matrix }}"
+      normalized_matrix: "${{ jobs.construct_expression_matrix.outputs.normalized_matrix }}"
+      splicing: "${{ jobs.rnaseq_splicing.outputs.success_marker }}"
+      qc_summary: "${{ jobs.qc_summary.outputs.report }}"
+    outputs:
+      success_marker: "${{ config.directories.sid_log }}/step2_success.txt"
+    resources:
+      cores: 5
+      memory: 2G
+      partition: cpu
+    steps:
+      - name: Write step2 success marker
+        run: |
+          mkdir -p "$(dirname '${{ outputs.success_marker }}')"
+          touch '${{ outputs.success_marker }}'

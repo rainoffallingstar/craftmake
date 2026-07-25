@@ -1,0 +1,138 @@
+name: BeaverRNASEQPDX step3 check
+version: 1
+on:
+  xdxtools:
+    workflow: BeaverRNASEQPDX
+    phase: step3-check
+    modes: [RNASEQ]
+defaults:
+  shell: bash
+  environment: xdxtools-core
+  observability:
+    metrics: task
+    capture_stdout: true
+    capture_stderr: true
+    compress_success_logs: true
+jobs:
+  sample_artifacts:
+    name: Validate BeaverRNASEQPDX sample artifacts
+    scope: sample
+    dimensions: [sample]
+    inputs:
+      counts: "${{ config.directories.methylation_call }}/${{ sample.id }}_${{ config.workflow.species.graft }}.txt"
+      filtered_bam: "${{ config.directories.bsmap.main }}/Filtered_bams/${{ sample.id }}_fixed_${{ config.workflow.species.graft }}_Filtered.bam"
+      trim_report_r1: "${{ config.output.trim_dir }}/${{ sample.id }}_R1.fastq.gz_trimming_report.txt"
+      trim_report_r2: "${{ config.output.trim_dir }}/${{ sample.id }}_R2.fastq.gz_trimming_report.txt"
+      fastqc_before_r1: "${{ config.directories.qc.before }}/${{ sample.id }}_R1_fqc/fastqc_data.txt"
+      fastqc_before_r2: "${{ config.directories.qc.before }}/${{ sample.id }}_R2_fqc/fastqc_data.txt"
+      fastqc_after_r1: "${{ config.directories.qc.after }}/${{ sample.id }}_val_1_fqc/fastqc_data.txt"
+      fastqc_after_r2: "${{ config.directories.qc.after }}/${{ sample.id }}_val_2_fqc/fastqc_data.txt"
+    outputs:
+      ready: "${{ config.directories.sid_log }}/step3-check/${{ sample.id }}.ready"
+    resources:
+      cores: 1
+      memory: 1G
+      partition: cpu
+    steps:
+      - name: Record validated RNA-seq PDX sample artifacts
+        run: |
+          mkdir -p "$(dirname '${{ outputs.ready }}')"
+          touch '${{ outputs.ready }}'
+
+  species_qc_artifacts:
+    name: Validate BeaverRNASEQPDX species mapping QC artifacts
+    scope: sample
+    dimensions: [sample, species]
+    inputs:
+      sorted_bam: "${{ config.directories.bsmap.main }}/${{ sample.id }}_${{ species.name }}.bam"
+      qualimap_report: "${{ config.directories.qualimap }}/${{ sample.id }}_${{ species.name }}/qualimapReport.html"
+    outputs:
+      ready: "${{ config.directories.sid_log }}/step3-check/${{ sample.id }}_${{ species.name }}_qc.ready"
+    resources:
+      cores: 1
+      memory: 1G
+      partition: cpu
+    steps:
+      - name: Record validated species QC artifacts
+        run: |
+          mkdir -p "$(dirname '${{ outputs.ready }}')"
+          touch '${{ outputs.ready }}'
+
+  construct_expression_matrix:
+    name: Construct BeaverRNASEQPDX expression matrices
+    scope: global
+    dimensions: []
+    inputs:
+      sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
+    outputs:
+      count_matrix: "${{ config.directories.beta_matrix }}/matrix_count.txt"
+      normalized_matrix: "${{ config.directories.beta_matrix }}/matrix_norm.txt"
+    resources:
+      cores: 5
+      memory: 8G
+      partition: cpu
+    steps:
+      - name: Build graft expression matrices
+        run: |
+          mkdir -p '${{ config.directories.beta_matrix }}'
+          htseq2matrix --htseq_dir '${{ config.directories.methylation_call }}' --output_dir '${{ config.directories.beta_matrix }}' --postfix '_${{ config.workflow.species.graft }}.txt'
+
+  qc_summary:
+    name: Build BeaverRNASEQPDX QC summary
+    scope: global
+    dimensions: []
+    inputs:
+      sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
+      species_qc_artifacts: "${{ jobs.species_qc_artifacts.outputs.ready }}"
+      self_config: "${{ config.directories.selfconfig }}/config.yaml"
+    outputs:
+      report: "${{ config.directories.qc_summary }}/qc_summary.xlsx"
+    resources:
+      cores: 5
+      memory: 8G
+      partition: cpu
+    steps:
+      - name: Run RNA-seq PDX QC summary
+        environment: xdxtools-core
+        run: |
+          mkdir -p '${{ config.directories.qc_summary }}'
+          source_config='${{ inputs.self_config }}'
+          qctb_config="$(mktemp "${TMPDIR:-/tmp}/craftmake-qctb-rnaseq-pdx.XXXXXX.yaml")"
+          trap 'rm -f "$qctb_config"' EXIT
+          python - "$source_config" "$qctb_config" '${{ config.workflow.species.graft }}' <<'PY'
+          import sys
+          import yaml
+
+          source_path, output_path, graft_species = sys.argv[1:]
+          with open(source_path, "r", encoding="utf-8") as source_file:
+              configuration = yaml.safe_load(source_file)
+          workflow_configuration = configuration.setdefault("workflow", {})
+          species_configuration = workflow_configuration.setdefault("species", {})
+          species_configuration["name"] = graft_species
+          with open(output_path, "w", encoding="utf-8") as output_file:
+              yaml.safe_dump(configuration, output_file, sort_keys=False)
+          PY
+          qctb --config "$qctb_config" --output '${{ outputs.report }}' --rnaseq
+
+  step3_checker:
+    name: Check BeaverRNASEQPDX step3
+    scope: global
+    dimensions: []
+    inputs:
+      sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
+      species_qc_artifacts: "${{ jobs.species_qc_artifacts.outputs.ready }}"
+      count_matrix: "${{ jobs.construct_expression_matrix.outputs.count_matrix }}"
+      normalized_matrix: "${{ jobs.construct_expression_matrix.outputs.normalized_matrix }}"
+      splicing: "${{ config.directories.bsmap.main }}/RNASplicing/RNASplicing_success.txt"
+      qc_summary: "${{ jobs.qc_summary.outputs.report }}"
+    outputs:
+      success_marker: "${{ config.directories.sid_log }}/step3_success.txt"
+    resources:
+      cores: 5
+      memory: 2G
+      partition: cpu
+    steps:
+      - name: Write step3 success marker
+        run: |
+          mkdir -p "$(dirname '${{ outputs.success_marker }}')"
+          touch '${{ outputs.success_marker }}'

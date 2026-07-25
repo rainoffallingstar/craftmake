@@ -1,0 +1,61 @@
+package compiler_test
+
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/fallingstar10/craftmake/internal/adapters/xdxtools"
+	"github.com/fallingstar10/craftmake/internal/compiler"
+	"github.com/fallingstar10/craftmake/internal/spec"
+)
+
+func TestCompileBeaverRNASEQPDXStep1Fixture(t *testing.T) {
+	repositoryRoot := repositoryRootForTest(t)
+	workflow, err := spec.Load(filepath.Join(repositoryRoot, "workflows", "BeaverRNASEQPDX", "step1.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	context, err := xdxtools.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverrnaseqpdx-step1.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context.Workflow.Mode != "RNASEQ" || context.Workflow.WorkflowName != "BeaverRNASEQPDX" || !context.Workflow.PDXMode {
+		t.Fatalf("unexpected BeaverRNASEQPDX context: %#v", context.Workflow)
+	}
+	if len(context.Species) != 2 || context.Species[0].Name != "human" || context.Species[1].Name != "mouse" {
+		t.Fatalf("unexpected RNA-seq PDX species contexts: %#v", context.Species)
+	}
+	reference := context.Raw["reference"].(map[string]any)
+	rnaReference := reference["rnaseq"].(map[string]any)
+	if rnaReference["graft_gtf"] != context.Species[0].RNASeqGTF || rnaReference["host_gtf"] != context.Species[1].RNASeqGTF {
+		t.Fatalf("unexpected canonical PDX RNA annotations: %#v", rnaReference)
+	}
+	if rnaReference["graft_reference"] != context.Species[0].RNASeqReference || rnaReference["host_reference"] != context.Species[1].RNASeqReference {
+		t.Fatalf("unexpected canonical PDX RNA references: %#v", rnaReference)
+	}
+
+	plan, err := compiler.Compile(workflow, context)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Tasks) != 7 || len(plan.Submissions) != 7 {
+		t.Fatalf("expected seven tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
+	}
+
+	fastqcTask := plan.TaskByID["BeaverRNASEQPDX/step1/fastqc_before/sample=sample-a"]
+	if fastqcTask == nil || len(fastqcTask.Dimensions) != 1 || fastqcTask.Dimensions["sample"] != "sample-a" {
+		t.Fatalf("RNA-seq PDX step1 should expand by sample only: %#v", fastqcTask)
+	}
+	trimTask := plan.TaskByID["BeaverRNASEQPDX/step1/trim_reads/sample=sample-a"]
+	if trimTask == nil || !strings.Contains(trimTask.Steps[0].Command, "--three_prime_clip_R2 '4'") {
+		t.Fatalf("unexpected RNA-seq PDX trim task: %#v", trimTask)
+	}
+	checkerTask := plan.TaskByID["BeaverRNASEQPDX/step1/step1_checker"]
+	if checkerTask == nil || len(checkerTask.Dependencies) != 6 {
+		t.Fatalf("RNA-seq PDX checker should depend on six sample tasks: %#v", checkerTask)
+	}
+	if checkerTask.Outputs["success_marker"] != filepath.Join("workflow", "log", "step1_success.txt") {
+		t.Fatalf("unexpected RNA-seq PDX checker marker %q", checkerTask.Outputs["success_marker"])
+	}
+}
