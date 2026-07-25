@@ -1,13 +1,13 @@
 name: BeaverRNASEQPDX step3
 version: 1
 on:
-  xdxtools:
+  otter:
     workflow: BeaverRNASEQPDX
     phase: step3
     modes: [RNASEQ]
 defaults:
   shell: bash
-  environment: xdxtools-core
+  environment: otter-core
   observability:
     metrics: task
     capture_stdout: true
@@ -52,7 +52,7 @@ jobs:
         run: |
           mkdir -p "$(dirname '${{ outputs.success_marker }}')"
           if [ '${{ config.metadata.group_levels }}' -ge 2 ]; then
-            gomats run --root '${{ config.directories.bsmap.main }}' --threads '${{ resources.cores }}' --pdata '${{ inputs.pdata }}' --seqlengthQC '${{ config.directories.qc.main }}' --gtf '${{ inputs.annotation }}' --pdxmode 1
+            matsrun run --root '${{ config.directories.bsmap.main }}' --threads '${{ resources.cores }}' --pdata '${{ inputs.pdata }}' --seqlengthQC '${{ config.directories.qc.main }}' --gtf '${{ inputs.annotation }}' --pdxmode 1
             printf 'RNASplicing_DONE\n' > '${{ outputs.success_marker }}'
           else
             printf 'RNASplicing_NOTRUN\n' > '${{ outputs.success_marker }}'

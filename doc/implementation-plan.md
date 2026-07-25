@@ -3,13 +3,15 @@
 ## 1. 文档状态
 
 - 状态：实施中
-- 最后更新：2026-07-24
-- 目标项目：`/home/fallingstar10/shire/craftmake`
+- 最后更新：2026-07-25
+- 目标项目：`/home/fallingstar10/shire/xdxtools/craftmake`
 - 主要语言：Go
-- 首要使用场景：执行和管理 `xdxtools` 的 RRBS、WGBS、BS-seq、RNA-seq 与 PDX 工作流
-- 首版定位：独立 runner CLI，不负责创建 `xdxtools` 项目、不负责扫描 FASTQ、不负责生成领域配置
+- 首要使用场景：执行和管理 `otter` 的 RRBS、WGBS、BS-seq、RNA-seq 与 PDX 工作流
+- 首版定位：独立 runner CLI，不负责创建 `otter` 项目、不负责扫描 FASTQ、不负责生成领域配置
 - 当前实施范围：阶段 1–7，以及独立 CLI 的打包发布工作
-- Deferred：阶段 8 `xdxtools` 子进程集成、阶段 9 Snakemake 双执行器 parity
+- 2026-07-25 命名硬切换：workflow DSL 仅接受 `on.otter`，默认环境为 `otter-core`，工具入口为 `fastqcx`、`xenofilx`、`pairbam`、`seq2mat`、`matsrun`、`methx`，Fastqcx 输出目录后缀为 `_fastqcx`，Methx 可执行覆盖变量为 `METHX`；不提供旧键、旧命令、旧任务标识、旧输出目录后缀或旧环境变量兼容别名
+- 历史证据边界：2026-07-25 前冻结的日志、checksum 与绝对路径可能记录旧命名，它们只用于证明当时的验收结果，不是当前默认；FastQC 外部协议及 `fastqc_data.txt` 文件名、`methrix_data.h5` 等科学数据名继续保留
+- Deferred：阶段 8 `otter` 子进程集成、阶段 9 Snakemake 双执行器 parity
 - 当前里程碑：M4 最小真实 Slurm 纵向验收、BeaverBS synthetic 五阶段、活动 Slurm 作业断连后 `resume`、Controller 结构化日志、显式 worker 动态补位、pending timeout、submit-limit 退避和 Paracloud Gate 0 工具基线均已通过；BeaverPDX Gate 1 synthetic human/mouse 五阶段真实工具链、五阶段全缓存 replay、选择性失效和运行中 Controller 中断/`resume` 均已通过。当前统一策略是四类 workflow 均只先做公开真实数据的确定性小样本验收：BeaverBS 与 BeaverPDX 复用既有结果并补齐来源记录，随后完成 BeaverRNA 和 BeaverRNASEQPDX；生产规模和统一多组学验收全部后移，不作为当前 workflow gate
 - 整体估算：执行器核心约 97%；首版发布范围约 96%
 
@@ -18,13 +20,13 @@
 | 阶段 | 状态 | 估算完成度 | 当前结论 |
 |---|---|---:|---|
 | 阶段 1：工程骨架、CLI 与协议 | 接近完成 | 98% | CLI、固定退出码、信号取消、二进制级退出码契约、Controller 结构化日志、manifest/result/event 兼容性边界和 result 时间字段策略均已完成 |
-| 阶段 2：Xdxtools Adapter 与 YAML Compiler | 大部分完成 | 85% | DSL、模板、维度展开、DAG、资源校验、路径规范化和提交前输入预检已实现；真实配置和领域 fixture 随生产验收继续扩充 |
+| 阶段 2：Otter Adapter 与 YAML Compiler | 大部分完成 | 85% | DSL、模板、维度展开、DAG、资源校验、路径规范化和提交前输入预检已实现；真实配置和领域 fixture 随生产验收继续扩充 |
 | 阶段 3：SQLite、Runtime 与 Local Backend | 接近完成 | 95% | Local global/sample/batch、状态、日志、输出校验、可靠取消、Controller 恢复和真实 orphan 进程恢复集成测试已完成 |
 | 阶段 4：Fingerprint、Resume 与 Local 指标 | 接近完成 | 95% | 缓存、artifact 校验、输入/输出变更失效、失效原因持久化/展示、GNU time、gzip、CSV、运行中 source run 对账和 resume CLI 集成测试已完成 |
 | 阶段 5：迁移 BeaverBS 与 BeaverPDX | 接近完成 | 98% | 两类 workflow 各五个 phase 均完成 YAML、编译和 Local 纵向验收；BeaverBS 与 BeaverPDX 均完成 synthetic 五阶段真实工具/Slurm 链路和全缓存 replay，BeaverPDX 另已完成选择性失效与运行中 Controller 恢复验收；公开真实数据候选已经登记，当前只补充确定性小样本验收，不执行生产规模验收 |
 | 阶段 6：迁移 BeaverRNA 与 BeaverRNASEQPDX | 大部分完成 | 90% | BeaverRNA 三个 phase 与 BeaverRNASEQPDX 五个 phase 均已完成 YAML、编译测试和 Local 假工具纵向验收；下一步只做已登记公开数据的真实工具与 Slurm 小样本验收 |
 | 阶段 7：Slurm Controller、Batch srun 与 Sacct | 接近完成 | 98% | Paracloud `amd_512` 已验证真实并发 slot、终态动态补位、pending reason/timeout/scancel、受控 submit-limit 退避后真实重投、sbatch/srun/sacct、断连后 `resume` 和 accounting 延迟补采；仍缺更高负载控制面验收与两个 RNA workflow 的小样本真实集群验收 |
-| 阶段 8：Xdxtools 集成 | Deferred | 0% | 首版不实施 |
+| 阶段 8：Otter 集成 | Deferred | 0% | 首版不实施 |
 | 阶段 9：Snakemake Parity | Deferred | 0% | 首版不实施 |
 | 阶段 10：独立 CLI 打包与发布 | 接近完成 | 95% | Makefile 安装/卸载、Linux amd64/arm64 静态发布包、checksums、解包后 catalog 路由 smoke、CI、release workflow 和首版 README 已完成；正式发布前仍需外部干净 Linux 与真实 Slurm 安装验收 |
 
@@ -46,13 +48,13 @@
 - pending timeout 真实控制链路：测试包装器在 `sbatch` 成功后 hold 两个 job，Controller 记录 `(JobHeldUser)` 并在各自持续 pending 10 秒后写入 `submission.pending_timeout`、调用 `scancel`；`sacct` 为 `CANCELLED` 且队列无残留。
 - submit-limit 退避验收：受控注入一次 `QOSMaxSubmitJobPerUserLimit`，Controller 在退避期间释放 slot，另一 ready submission 动态补位；原 submission 随后重新竞争 slot 并调用真实 `sbatch`，三个 job 均 `COMPLETED/0`。
 - Paracloud 已提供 `x86_64-unknown-linux-musl` static PIE `enva`；现有二进制为 ELF `ET_DYN` PIE，`ldd` 确认为 statically linked，本项目不重复构建。
-- BeaverBS step1 已在 Paracloud `amd_512` 使用真实 `fqc 0.3.4`、`trim_galore 0.6.10` 和每端 20,000 reads 的配对 FASTQ 完成验收：三个生物工具 allocation 与 checker allocation均 `COMPLETED/0`，输出命名、gzip 完整性、FastQC 数据、trimming report、成功标记和 `slurm_sacct/accounting` CSV 指标均通过。
-- BeaverBS synthetic hg38-window 纵向链路已完成真实 step2、step2-check、step3 和 step3-check：step2-check 三个 job 均 `COMPLETED/0`，MultiQC 1.19 报告包含 sample、Qualimap 和 Picard 模块；step3 使用 samtools、static `paireads` 和 Bismark methylation extractor，coverage gzip 与 BAM quickcheck 通过；step3-check 七个任务使用真实 Methrix、Bismark report/summary 和 QCTB 成功生成 1.39 MB CpG RON、HDF5、两个有效 XLSX、HTML 报告和 success marker；完整缓存复验分别为 `cached: 3`、`cached: 1`、`cached: 7` 且未新增 job。
+- BeaverBS step1 已在 Paracloud `amd_512` 使用真实 `fastqcx 0.3.4`、`trim_galore 0.6.10` 和每端 20,000 reads 的配对 FASTQ 完成验收：三个生物工具 allocation 与 checker allocation均 `COMPLETED/0`，输出命名、gzip 完整性、FastQC 数据、trimming report、成功标记和 `slurm_sacct/accounting` CSV 指标均通过。
+- BeaverBS synthetic hg38-window 纵向链路已完成真实 step2、step2-check、step3 和 step3-check：step2-check 三个 job 均 `COMPLETED/0`，MultiQC 1.19 报告包含 sample、Qualimap 和 Picard 模块；step3 使用 samtools、static `pairbam` 和 Bismark methylation extractor，coverage gzip 与 BAM quickcheck 通过；step3-check 七个任务使用真实 Methrix、Bismark report/summary 和 QCTB 成功生成 1.39 MB CpG RON、HDF5、两个有效 XLSX、HTML 报告和 success marker；完整缓存复验分别为 `cached: 3`、`cached: 1`、`cached: 7` 且未新增 job。
 - step3-check 真实验收发现 Methrix 0.1.0 的生产契约与旧假工具不一致：`process` 不支持 `--annotation-dir`，主 HDF5 输出为 `methrix_data.h5`，且默认过滤非标准 FASTA contig；BeaverBS/BeaverPDX 已同步改用真实输出契约，并在默认 RON 为空时从 FASTA header 显式传入 `--contigs`，严格 fake CLI、编译测试和真实 Slurm 均通过。
-- Paracloud Gate 0 工具基线已在登录节点和全新 `amd_512` allocation 通过：job `40824307` 验证 Bismark 0.25.1、STAR 2.7.11b、samtools 1.15.1、Qualimap 2.3、Picard 3.4.0、HTSeq 2.0.3、MultiQC 1.19、Trim Galore 0.6.10、`paireads`/Xenofilter `daily-20260717`、QCTB 0.1.0、FQC 0.3.4 与 Methrix 0.1.0；`sacct` 为 `COMPLETED/0`。
+- Paracloud Gate 0 工具基线已在登录节点和全新 `amd_512` allocation 通过：job `40824307` 验证 Bismark 0.25.1、STAR 2.7.11b、samtools 1.15.1、Qualimap 2.3、Picard 3.4.0、HTSeq 2.0.3、MultiQC 1.19、Trim Galore 0.6.10、`pairbam`/Xenofilx `daily-20260717`、QCTB 0.1.0、`fastqcx` 0.3.4 与 Methrix 0.1.0；`sacct` 为 `COMPLETED/0`。
 - Gate 0 发现 managed environment 中 Picard wrapper 会误用继承的 base `JAVA_HOME` 并触发 `JLI_StringDup`；BeaverBS、BeaverPDX 和 BeaverRNASEQPDX 的 Picard steps 现会在可用时绑定 `${CONDA_PREFIX}/lib/jvm`。真实 job `40824319` 使用 Picard 3.4.0 处理 800 aligned reads，生成有效 metrics/PDF，`sacct` 为 `COMPLETED/0`。
-- BeaverBS/BeaverPDX Methrix steps 现支持 `METHRIX_CLI` 显式可执行路径并保留 `methrix-cli` 默认值。真实 job `40824365` 在清空 `LD_LIBRARY_PATH`、无临时 PATH link 条件下从 1 个 contig 提取 9,893 个 CpG，处理 1 个 Bismark coverage，生成有效 HDF5 和 XLSX，`sacct` 为 `COMPLETED/0`；全局 `~/.cargo/bin/methrix-cli` 的损坏 ABI 不再是 Paracloud workflow 阻塞项。
-- 真实 step3 首次运行发现 BeaverBS/BeaverPDX workflow 将 paireads 临时输入命名为 `.bam.tmp`，违反 paireads 的 `.bam` 后缀契约；已改为 `.tmp.bam`，并通过两个 workflow 的扩展感知 Local 回归和 BeaverBS 真实 Slurm 复验。
+- BeaverBS/BeaverPDX `methx` steps 现支持 `METHX` 显式可执行路径并保留 `methx` 默认值。真实 job `40824365` 在清空 `LD_LIBRARY_PATH`、无临时 PATH link 条件下从 1 个 contig 提取 9,893 个 CpG，处理 1 个 Bismark coverage，生成有效 HDF5 和 XLSX，`sacct` 为 `COMPLETED/0`；全局 `~/.cargo/bin/methx` 的损坏 ABI 不再是 Paracloud workflow 阻塞项。
+- 真实 step3 首次运行发现 BeaverBS/BeaverPDX workflow 将 pairbam 临时输入命名为 `.bam.tmp`，违反 pairbam 的 `.bam` 后缀契约；已改为 `.tmp.bam`，并通过两个 workflow 的扩展感知 Local 回归和 BeaverBS 真实 Slurm 复验。
 - BeaverBS step1 验收期间 Controller 在第三个 Slurm allocation 运行后断连；`resume` 成功采用已有 terminal result，续跑 run 缓存前三个任务并仅提交 checker，完成真实活动作业断连恢复验证。
 - BeaverBS step1 完整缓存重跑为 `cached: 4`，且未新增 Slurm job。
 - Slurm submission shell 兼容 Bash 4.2 `set -u` 空数组；`squeue=COMPLETING` 时可用 `sacct` 明确终态及时收口。
@@ -63,7 +65,7 @@
 - 四类 workflow 的真实生信工具与 Slurm 小样本验收仍在推进；BeaverBS 与 BeaverPDX 五个 phase 均已完成 synthetic 跨 phase 真实工具链和全缓存 replay，BeaverPDX Gate 1 的选择性失效与运行中恢复也已通过；当前只剩用已登记公开数据补齐/复核 BeaverBS、BeaverPDX 小样本 provenance，并完成 BeaverRNA、BeaverRNASEQPDX 的真实工具小样本验收。生产规模与统一多组学验收明确后移，不计入当前 workflow gate。
 - 正式发布前仍需在外部干净 Linux 环境验证安装、Local smoke、真实 Slurm smoke 和旧数据库迁移；本工作区内的 checksum、解包后二进制、自动 workflow catalog 路由和静态 ELF 检查已通过。
 - 小样本验收需要目标集群上的完整 reference 和跨 phase 产物；Paracloud 账号、Slurm、真实工具环境及 static PIE `enva` 已可用，不再列为阻塞项。
-- Paracloud 的全局 `~/.cargo/bin/methrix-cli` 仍缺少 `libhdf5_serial.so.103`，但 BeaverBS/BeaverPDX workflow 已支持通过 `METHRIX_CLI` 使用固定的 `$HOME/methrix-cli/target/release/methrix`；该二进制在 `LD_LIBRARY_PATH` 清空的计算节点上通过真实输入验收。干净 Linux 发布仍需将 Methrix 及其 HDF5 依赖封装为可移植资产或受管理环境。
+- Paracloud 的全局 `~/.cargo/bin/methx` 仍缺少 `libhdf5_serial.so.103`，但 BeaverBS/BeaverPDX workflow 已支持通过 `METHX` 使用固定的 `$HOME/methx/target/release/methx`；该二进制在 `LD_LIBRARY_PATH` 清空的计算节点上通过真实输入验收。干净 Linux 发布仍需将 Methrix 及其 HDF5 依赖封装为可移植资产或受管理环境。
 
 已从未完成清单移除的近期完成项：缓存失效原因持久化与展示、真实 Local orphan 恢复集成测试、`resume` CLI 集成测试、`report --refresh-metrics`、Controller JSONL 结构化日志和 SQLite `events` 双写、TaskEvent/TaskResult 协议边界、scheduler flag 回归测试、本地发布包验收、Paracloud workers/pending/submit-limit 控制链路、BeaverBS step2-check/step3/step3-check synthetic 真实工具验收、BeaverPDX Gate 1 选择性失效与运行中 Controller 恢复，以及独立 `enva` static PIE 构建。
 
@@ -80,18 +82,18 @@
 - [x] 使 BeaverBS step1 通过 `validate` 与 `plan`；当前计划为 7 个 task、7 个 submission。
 - [x] 建立不依赖大型生信数据的 Local 假工具 fixture，验证 sample 独立执行、全局聚合、缓存、日志和 CSV。
 - [x] 增加 Adapter、Compiler 与 CLI 纵向回归测试；首次运行 `succeeded: 7`，第二次运行 `cached: 7`。
-- [x] 对照真实 `fqc 0.3.4` 和 `trim_galore 0.6.10` 在 Paracloud `amd_512` 执行 BeaverBS step1 小型真实工具 smoke test；每端 20,000 reads 的配对 FASTQ、文件命名、gzip 输出和 FastQC/Trim Galore 契约均通过验收。
-- [x] 根据迁移结果补强 xdxtools Adapter 和 Compiler，完成配置路径规范化、sample/species 上下文路径映射和提交前输入文件预检。
+- [x] 对照真实 `fastqcx 0.3.4` 和 `trim_galore 0.6.10` 在 Paracloud `amd_512` 执行 BeaverBS step1 小型真实工具 smoke test；每端 20,000 reads 的配对 FASTQ、文件命名、gzip 输出和 FastQC/Trim Galore 契约均通过验收。
+- [x] 根据迁移结果补强 otter Adapter 和 Compiler，完成配置路径规范化、sample/species 上下文路径映射和提交前输入文件预检。
 - [x] 编写 `workflows/BeaverBS/step2.yaml` 初版，覆盖 Bismark、samtools、Qualimap 和 Picard GC bias。
 - [x] 编写 `workflows/BeaverBS/step2-check.yaml` 初版，覆盖跨 phase sample artifact 预检、MultiQC 和 checker。
 - [x] 使 BeaverBS step2 与 step2-check 通过 `validate` 与 `plan`；当前分别为 6 和 4 个 task/submission。
 - [x] 建立 BeaverBS step2 与 step2-check Local 假工具纵向 fixture；首次分别 `succeeded: 6`、`succeeded: 4`，第二次分别 `cached: 6`、`cached: 4`。
-- [x] 编写 `workflows/BeaverBS/step3.yaml` 初版，覆盖 name sort、`paireads` 和 Bismark methylation extractor。
+- [x] 编写 `workflows/BeaverBS/step3.yaml` 初版，覆盖 name sort、`pairbam` 和 Bismark methylation extractor。
 - [x] 编写 `workflows/BeaverBS/step3-check.yaml` 初版，覆盖 Methrix、Bismark report/summary、QC summary 和 checker。
 - [x] 使 BeaverBS step3 与 step3-check 通过 `validate` 与 `plan`；当前分别为 2 和 9 个 task/submission。
 - [x] 建立 BeaverBS step3 与 step3-check Local 假工具纵向 fixture；首次分别 `succeeded: 2`、`succeeded: 9`，第二次分别 `cached: 2`、`cached: 9`。
-- [x] 在 Paracloud `amd_512` 使用 synthetic hg38-window 真实 Bismark、samtools、Qualimap、Picard、MultiQC、paireads 和 methylation extractor 完成 BeaverBS step2、step2-check、step3；三条 phase 均完成 Slurm accounting 与全缓存复验。
-- [x] 修正 BeaverBS/BeaverPDX step3 的 paireads 临时 BAM 后缀，从 `.bam.tmp` 改为 `.tmp.bam`，并以扩展感知 fake paireads 与 BeaverBS 真实 Slurm 复验防止回归。
+- [x] 在 Paracloud `amd_512` 使用 synthetic hg38-window 真实 Bismark、samtools、Qualimap、Picard、MultiQC、pairbam 和 methylation extractor 完成 BeaverBS step2、step2-check、step3；三条 phase 均完成 Slurm accounting 与全缓存复验。
+- [x] 修正 BeaverBS/BeaverPDX step3 的 pairbam 临时 BAM 后缀，从 `.bam.tmp` 改为 `.tmp.bam`，并以扩展感知 fake pairbam 与 BeaverBS 真实 Slurm 复验防止回归。
 - [x] 在 Paracloud `amd_512` 使用 synthetic hg38-window 跨 phase 真实产物完成 BeaverBS step3-check；七个任务使用真实 Methrix 0.1.0、Bismark report/summary 和 QCTB，HDF5、XLSX、HTML 与 success marker 均通过完整性检查，缓存复验为 `cached: 7` 且无物理提交。
 - [x] 按真实 Methrix 0.1.0 契约修正 BeaverBS/BeaverPDX step3-check：移除 `--annotation-dir`，使用 `methrix_data.h5`，并为非标准 FASTA contig 增加 `--contigs` 回退；严格 Local fake、编译测试和 BeaverBS 真实 Slurm 复验均通过。
 - [ ] Deferred：四类 workflow 小样本工具链统一完成后，再设计 BeaverBS/BeaverPDX 生产规模与多组学联合验收；当前不下载或运行全量 RRBS/WGBS。
@@ -99,19 +101,19 @@
 - [x] 编写 `workflows/BeaverPDX/step2.yaml`，mapping 按 `species` 分组为两个 batch allocation，每组两个 sample worker；Qualimap 与 GC bias 保持 sample × species 独立提交。
 - [x] 使 BeaverPDX step2 通过 `validate` 与 `plan`；两样本、两物种生成 12 个逻辑任务和 10 个物理提交。
 - [x] 建立 BeaverPDX step2 Local 假工具纵向 fixture并验证 batch 执行与缓存；首次 `succeeded: 12`，第二次 `cached: 12`。
-- [x] 迁移 BeaverPDX step2-check，覆盖 sample×species step2 artifact 校验、Picard tag patch、全局 Xenofilter、逐样本 filtered BAM 校验、MultiQC 和最终 checker。
+- [x] 迁移 BeaverPDX step2-check，覆盖 sample×species step2 artifact 校验、Picard tag patch、全局 Xenofilx、逐样本 filtered BAM 校验、MultiQC 和最终 checker。
 - [x] 使 BeaverPDX step2-check 通过 `validate` 与 `plan`；两样本、两物种生成 13 个 task/submission。
 - [x] 建立 BeaverPDX step2-check Local 假工具纵向 fixture；首次 `succeeded: 13`，第二次 `cached: 13`。
-- [x] 迁移 BeaverPDX step3，使用 Xenofilter 的 `${sample}_fixed_${graft}_Filtered.bam` 实际产物，覆盖 name sort、`paireads` 和 Bismark methylation extractor。
+- [x] 迁移 BeaverPDX step3，使用 Xenofilx 的 `${sample}_fixed_${graft}_Filtered.bam` 实际产物，覆盖 name sort、`pairbam` 和 Bismark methylation extractor。
 - [x] 使 BeaverPDX step3 通过 `validate` 与 `plan`；两样本生成 2 个 task/submission。
 - [x] 建立 BeaverPDX step3 Local 假工具纵向 fixture；首次 `succeeded: 2`，第二次 `cached: 2`。
 - [x] 迁移 BeaverPDX step3-check，覆盖 sample-level step3 artifact、sample×species mapping QC、Methrix、graft Bismark report/summary、QC summary 和最终 checker。
 - [x] 使 BeaverPDX step3-check 通过 `validate` 与 `plan`；两样本、两物种生成 13 个 task/submission。
 - [x] 建立 BeaverPDX step3-check Local 假工具纵向 fixture；首次 `succeeded: 13`，第二次 `cached: 13`。
-- [x] 在 Paracloud `amd_512` 完成 BeaverPDX synthetic human/mouse 五阶段真实工具链与全缓存 replay；真实 Xenofilter filtered BAM、Methrix、QCTB、五阶段 accounting、最终空队列和 checksums 均已冻结到 v5 evidence。
+- [x] 在 Paracloud `amd_512` 完成 BeaverPDX synthetic human/mouse 五阶段真实工具链与全缓存 replay；真实 Xenofilx filtered BAM、Methrix、QCTB、五阶段 accounting、最终空队列和 checksums 均已冻结到 v5 evidence。
 - [x] 在独立副本中完成 BeaverPDX 选择性失效和运行中 Controller 中断/`resume` 验收；选择性 run 为 `cached: 11, succeeded: 2`，恢复 continuation 为 `cached: 12, succeeded: 1`，均无非预期重投。
 - [ ] Deferred：四类 workflow 小样本工具链统一完成后，再使用完整双物种项目执行 BeaverPDX 生产规模验收；当前不下载或运行全量 PDX WGBS。
-- [x] 盘点 BeaverRNA step1 的专用 Snakefile 与 `fqc`、`trim_galore`、checker 输出契约。
+- [x] 盘点 BeaverRNA step1 的专用 Snakefile 与 `fastqcx`、`trim_galore`、checker 输出契约。
 - [x] 编写 `workflows/BeaverRNA/step1.yaml`，保留 RNA trimming 的 `c1/c2/t1/t2` 参数并覆盖前后 FastQC 与全局 checker。
 - [x] 使 BeaverRNA step1 通过 `validate` 与 `plan`；两样本生成 7 个 task/submission。
 - [x] 建立 BeaverRNA step1 Local 假工具纵向 fixture；首次 `succeeded: 7`，第二次 `cached: 7`。
@@ -129,7 +131,7 @@
 - [x] 迁移 BeaverRNASEQPDX step2，mapping 按 species 分成两个 batch allocation，每组两个 sample STAR worker；Qualimap 保持 sample×species 独立提交。
 - [x] 使 BeaverRNASEQPDX step2 通过 `validate` 与 `plan`；两样本、两物种生成 8 个逻辑任务和 6 个物理提交。
 - [x] 建立 BeaverRNASEQPDX step2 Local 假工具纵向 fixture；首次 `succeeded: 8`，第二次 `cached: 8`。
-- [x] 迁移 BeaverRNASEQPDX step2-check，覆盖 sample×species artifact 校验、RNA 模式 Picard tag patch、全局 Xenofilter、逐样本 filtered BAM 校验和最终 checker。
+- [x] 迁移 BeaverRNASEQPDX step2-check，覆盖 sample×species artifact 校验、RNA 模式 Picard tag patch、全局 Xenofilx、逐样本 filtered BAM 校验和最终 checker。
 - [x] 使 BeaverRNASEQPDX step2-check 通过 `validate` 与 `plan`；两样本、两物种生成 12 个 task/submission。
 - [x] 建立 BeaverRNASEQPDX step2-check Local 假工具纵向 fixture；首次 `succeeded: 12`，第二次 `cached: 12`。
 - [x] 迁移 BeaverRNASEQPDX step3，覆盖 filtered graft BAM 的 HTSeq count 与 PDX RNA splicing。
@@ -151,15 +153,15 @@
 状态与证据：
 
 - 隔离证据目录：`$HOME/craftmake-gate0-tool-baseline-20260724`；保留登录节点 probe、计算节点 probe、提交 manifest、Slurm stdout/stderr、`sacct`、settled `squeue` 和关键产物 checksum。
-- 登录节点和 job `40824307` 使用 `xdxtools-core` 固定了工具路径和版本：Bismark 0.25.1、STAR 2.7.11b、samtools 1.15.1、Qualimap 2.3、Picard 3.4.0、HTSeq 2.0.3、MultiQC 1.19、Trim Galore 0.6.10、`paireads`/Xenofilter `daily-20260717`、QCTB 0.1.0、FQC 0.3.4、Methrix 0.1.0、enva 0.1.0 和 Slurm 23.11.8；job 为 `COMPLETED/0`。
-- 全局 `~/.cargo/bin/methrix-cli` 确认依赖缺失的 `libhdf5_serial.so.103`，不能作为生产入口。BeaverBS/BeaverPDX workflow 已支持 `METHRIX_CLI`；Paracloud 固定为 `$HOME/methrix-cli/target/release/methrix`，SHA-256 为 `7f40fca88003b0d3bf206e0be3fe4440495c395967110bb10ba6f723a93cb03a`，RUNPATH 指向 `rust_build/lib`。
+- 登录节点和 job `40824307` 使用 `otter-core` 固定了工具路径和版本：Bismark 0.25.1、STAR 2.7.11b、samtools 1.15.1、Qualimap 2.3、Picard 3.4.0、HTSeq 2.0.3、MultiQC 1.19、Trim Galore 0.6.10、`pairbam`/Xenofilx `daily-20260717`、QCTB 0.1.0、`fastqcx` 0.3.4、Methrix 0.1.0、enva 0.1.0 和 Slurm 23.11.8；job 为 `COMPLETED/0`。
+- 全局 `~/.cargo/bin/methx` 确认依赖缺失的 `libhdf5_serial.so.103`，不能作为生产入口。BeaverBS/BeaverPDX workflow 已支持 `METHX`；Paracloud 固定为 `$HOME/methx/target/release/methx`，SHA-256 为 `7f40fca88003b0d3bf206e0be3fe4440495c395967110bb10ba6f723a93cb03a`，RUNPATH 指向 `rust_build/lib`。
 - job `40824365` 在 `LD_LIBRARY_PATH` 清空且无临时 PATH link 条件下完成真实 Methrix CpG 提取和 process：提取 9,893 个 CpG，保留 323 个有 coverage 的 CpG，生成有效 `methrix_data.h5` 和可解包 `CpG_coverage.xlsx`；`sacct` 为 `COMPLETED/0`，settled `squeue` 无残留。
 - 默认 Picard wrapper 会误用 base `JAVA_HOME` 并触发 `JLI_StringDup`。四处 Picard workflow invocation 已在当前 `${CONDA_PREFIX}/lib/jvm/bin/java` 存在时绑定 `JAVA_HOME`；job `40824319` 使用 Picard 3.4.0 处理真实小型 BAM，生成有效 metrics、summary 和 PDF，`sacct` 为 `COMPLETED/0`，settled `squeue` 无残留。
-- compiler 和 Local integration tests 已覆盖 Picard Java 绑定及 `METHRIX_CLI` 覆盖；完整 `make check` 通过。
+- compiler 和 Local integration tests 已覆盖 Picard Java 绑定及 `METHX` 覆盖；完整 `make check` 通过。
 
 通过结论：
 
-- Paracloud Gate 0 已通过；继续 Gate 1 时必须在启动 `craftmake` 前设置固定的 `METHRIX_CLI`，不得恢复临时 `tool-bin` link。
+- Paracloud Gate 0 已通过；继续 Gate 1 时必须在启动 `craftmake` 前设置固定的 `METHX`，不得恢复临时 `tool-bin` link。
 - clean Linux 发布仍需将 Methrix 二进制和 HDF5 依赖封装为可移植发布资产或独立 managed environment；该项保留在 Gate 5，不阻塞 Paracloud Gate 1。
 
 #### Gate 1：BeaverPDX synthetic 双物种真实工具链（已通过）
@@ -169,7 +171,7 @@
 状态与证据：
 
 - 隔离根目录：`$HOME/craftmake-gate1-beaverpdx-20260724-01`；最终冻结链使用 `project-v5`、`state-v5`、`evidence-v5` 和 `workflows-v5`，历史 v1–v4 失败证据均保留且未覆盖。
-- 五个 phase 首次成功状态分别为 `succeeded: 7`、`12`、`13`、`2`，以及 step3-check 最终修复 run 的 `cached: 11, succeeded: 2`。真实 Xenofilter 对 sample-g/sample-h 分别产生 158/160 条 mapped graft alignments；两个 BAM 与 BAI 非空并通过 `samtools quickcheck`。
+- 五个 phase 首次成功状态分别为 `succeeded: 7`、`12`、`13`、`2`，以及 step3-check 最终修复 run 的 `cached: 11, succeeded: 2`。真实 Xenofilx 对 sample-g/sample-h 分别产生 158/160 条 mapped graft alignments；两个 BAM 与 BAI 非空并通过 `samtools quickcheck`。
 - Methrix 从两个 synthetic human contig 提取 5,239 个 CpG，生成有效 RON、HDF5 和可解包 `CpG_coverage.xlsx`；QCTB 作为未修改的外部工具处理两个样本，stderr 为空、exit 0，并生成 6.2 KiB 的有效 `qc_summary.xlsx`。PDX task 仅生成临时兼容 YAML，不改原项目 config，也不改 QCTB。
 - 五阶段全缓存 replay 分别为 `cached: 7`、`12`、`13`、`2`、`13`，各 Controller 均为 0 个 `backend_job_id`，没有新物理 Slurm submission。
 - 最终 QCTB/checker jobs `40828160`、`40828162` 均为 `COMPLETED|0:0`；后者曾在 `sacct` 终态后短暂停留 `COMPLETING`，最终 `squeue` 为空。完整状态、accounting 和 checksums 已冻结到 `evidence-v5/gate1-v5-final-summary.txt`。
@@ -181,7 +183,7 @@
 
 - [x] 构造同一批配对 FASTQ，使 human 和 mouse reference 均产生可验证的 mapping 结果。
 - [x] 运行 step1、step2、step2-check、step3、step3-check，并隔离保存每轮成功/失败证据。
-- [x] 验证 sample × species batch submission、Picard tag patch、真实 Xenofilter、graft/host filtered BAM、`.tmp.bam` paireads 输入、methylation extraction、Methrix、Bismark report/summary、MultiQC 和 QCTB。
+- [x] 验证 sample × species batch submission、Picard tag patch、真实 Xenofilx、graft/host filtered BAM、`.tmp.bam` pairbam 输入、methylation extraction、Methrix、Bismark report/summary、MultiQC 和 QCTB。
 - [x] 每个 phase 完成一次全缓存重跑并证明零新物理 submission。
 
 - [x] 在新的 project/state 副本中仅修改 QCTB XLSX 的 artifact mtime，验证 11 个无关任务保持 cached，仅 QCTB 和下游 checker 重算；冻结的 v5 state 未写入。
@@ -209,7 +211,7 @@
 
 - 原始 accession 不变；先保存 NCBI run metadata、download URL/hash（若提供）、下载时间、原始 spots/bases/size，再生成小样本。
 - 使用 `fasterq-dump --split-files` 或等价受控导出后，以配对一致的方式确定性保留每个候选 run 的前 1,000,000 对 reads；记录完整导出 FASTQ checksum、抽样 FASTQ checksum、read-pair count、read length 和 `gzip -t` 结果。不得把已有 synthetic FASTQ 标为公开真实数据。
-- 每个 workflow 默认两个真实 run。若 PDX 小样本中的 host 或 graft reads 不足以覆盖 Xenofilter 契约，可按 `1M -> 2M -> 5M` read pairs 有界增加，必须记录触发原因和最终 read count；仍属于小样本验收。
+- 每个 workflow 默认两个真实 run。若 PDX 小样本中的 host 或 graft reads 不足以覆盖 Xenofilx 契约，可按 `1M -> 2M -> 5M` read pairs 有界增加，必须记录触发原因和最终 read count；仍属于小样本验收。
 - 小样本只验证真实工具可启动、参数与文件命名契约、跨 phase 产物、DAG/Slurm 调度、缓存、选择性失效、取消和 `resume`。它不证明原始队列吞吐、生产资源估算、完整生物学覆盖度、差异分析或统计功效。
 - BeaverRNA 和 BeaverRNASEQPDX 当前均设置 `metadata.group_levels: 1`，splicing 明确产出 `RNASplicing_NOTRUN`；统计型 splicing 留到未来有足够分组和重复的统一多组学验收。
 - 每条验收链必须使用唯一 project/state/evidence/workflow 目录和 run ID，保留 SQLite、Controller JSONL、`status --verbose`、report、`sacct`、最终空 `squeue` 以及领域文件完整性结果；不得覆盖历史 evidence。
@@ -221,9 +223,9 @@
 执行项：
 
 - BeaverBS：用登记的 human RRBS 小样本复核 step1–step3-check，验证 Bismark、samtools、Qualimap、Picard、Methrix、QCTB 和 checker；既有 synthetic 结果作为补充回归证据。
-- BeaverPDX：用登记的 prostate PDX WGBS 小样本复核 human/mouse mapping、Picard tag patch、Xenofilter、methylation extraction、Methrix 和 QCTB；完整 30× runs 不下载。
+- BeaverPDX：用登记的 prostate PDX WGBS 小样本复核 human/mouse mapping、Picard tag patch、Xenofilx、methylation extraction、Methrix 和 QCTB；完整 30× runs 不下载。
 - BeaverRNA：用登记的 mouse RNA-seq 小样本验证 FQC、Trim Galore、STAR、samtools、Qualimap、HTSeq、表达矩阵、QCTB 和 checker；单组模式不运行统计型 splicing。
-- BeaverRNASEQPDX：通过 SRA 可访问性 preflight 后，用登记的 PDAC PDX RNA-seq 小样本验证双物种 STAR batch、Picard tag patch、RNA Xenofilter、filtered BAM、HTSeq、表达矩阵、QCTB 和 checker；单组模式不运行统计型 splicing。
+- BeaverRNASEQPDX：通过 SRA 可访问性 preflight 后，用登记的 PDAC PDX RNA-seq 小样本验证双物种 STAR batch、Picard tag patch、RNA Xenofilx、filtered BAM、HTSeq、表达矩阵、QCTB 和 checker；单组模式不运行统计型 splicing。
 - 每个 workflow 执行全缓存 replay，并至少覆盖一次与现有风险匹配的局部失效或 Controller `resume`；已在相同链路充分证明的调度能力可引用冻结证据，不重复制造无意义的大数据负载。
 
 通过标准：
@@ -301,7 +303,7 @@
 
 ## 2. 背景与目标
 
-现有 `xdxtools` 已经具备以下能力：
+现有 `otter` 已经具备以下能力：
 
 - Go CLI 与项目配置加载
 - FASTQ 扫描及样本配对
@@ -322,7 +324,7 @@
 `craftmake` 的目标是提供一个独立、可复用、单二进制的原生工作流执行器：
 
 1. 读取 GitHub Actions 风格的声明式 YAML。
-2. 读取现有 `xdxtools config.yaml`。
+2. 读取现有 `otter config.yaml`。
 3. 编译每个 phase 的逻辑任务 DAG。
 4. 在 Local 或 Slurm 上调度 global、sample 和 batch 任务。
 5. 提供任务级缓存、恢复、状态、日志和资源指标。
@@ -356,14 +358,14 @@
 
 ### 3.2 Deferred：阶段 8
 
-暂不实施 `xdxtools` 对 `craftmake` 的子进程集成，包括：
+暂不实施 `otter` 对 `craftmake` 的子进程集成，包括：
 
-- 不修改 `xdxtools run`。
-- 不增加 `xdxtools --executor native|snakemake`。
-- 不建立 `xdxtools` 与 `craftmake` 的 JSONL 事件转发。
-- 不改变 `xdxtools` 当前 Snakemake 默认执行路径。
+- 不修改 `otter run`。
+- 不增加 `otter --executor native|snakemake`。
+- 不建立 `otter` 与 `craftmake` 的 JSONL 事件转发。
+- 不改变 `otter` 当前 Snakemake 默认执行路径。
 
-`craftmake` 首版由用户直接调用，但必须能够独立读取 `xdxtools config.yaml`。
+`craftmake` 首版由用户直接调用，但必须能够独立读取 `otter config.yaml`。
 
 ### 3.3 Deferred：阶段 9
 
@@ -371,7 +373,7 @@
 
 - 不要求自动比较 Snakemake DAG 与 craftmake DAG。
 - 不要求 native/Snakemake 双路径执行同一 fixture。
-- 不要求以 parity 结果决定 `xdxtools` 默认执行器。
+- 不要求以 parity 结果决定 `otter` 默认执行器。
 
 工作流迁移阶段仍需做内部输出契约测试，但不建立正式双执行器验收系统。
 
@@ -404,12 +406,12 @@
 选择 Go 的原因：
 
 - 适合构建静态单二进制 CLI。
-- `xdxtools` 主项目已经使用 Go，未来集成成本较低。
+- `otter` 主项目已经使用 Go，未来集成成本较低。
 - Local worker pool、Slurm controller 和进程管理适合 Go 并发模型。
 - 工作流调度是控制面工作，不是需要 Rust 性能优势的计算热点。
-- Rust 仍适合作为叶子计算程序，例如 `methrix-cli` 与 `fastqc-rs`。
+- Rust 仍适合作为叶子计算程序，例如 `methx` 与 `fastqc-rs`。
 
-### 4.2 独立 CLI，而不是直接嵌入 xdxtools
+### 4.2 独立 CLI，而不是直接嵌入 otter
 
 `craftmake` 独立负责：
 
@@ -423,7 +425,7 @@
 - cancel
 - doctor
 
-`xdxtools` 继续负责：
+`otter` 继续负责：
 
 - 项目创建
 - FASTQ 扫描与配对
@@ -431,7 +433,7 @@
 - 参考文件配置
 - 用户空间管理
 
-这种边界避免把通用调度、状态和可观测性逻辑继续堆积在 `xdxtools/cmd/run.go` 中。
+这种边界避免把通用调度、状态和可观测性逻辑继续堆积在 `otter/cmd/run.go` 中。
 
 ### 4.3 每个 phase 独立 DAG
 
@@ -480,7 +482,7 @@ YAML 中：
 ```mermaid
 flowchart LR
     user[User] --> cli[CraftmakeCLI]
-    cli --> adapter[XdxtoolsConfigAdapter]
+    cli --> adapter[OtterConfigAdapter]
     adapter --> loader[WorkflowLoader]
     loader --> compiler[WorkflowCompiler]
     compiler --> dag[LogicalTaskDAG]
@@ -499,7 +501,7 @@ flowchart LR
 ### 5.1 主要层级
 
 1. CLI 层：命令、参数、退出码和用户输出。
-2. Adapter 层：把 `xdxtools config.yaml` 规范化为 craftmake runtime context。
+2. Adapter 层：把 `otter config.yaml` 规范化为 craftmake runtime context。
 3. Spec 层：Workflow YAML 数据模型和 schema 版本。
 4. Compiler 层：展开任务实例、渲染模板、推导 DAG、校验资源。
 5. Scheduler 层：ready queue、缓存、失败阻断、并发与恢复。
@@ -609,14 +611,14 @@ name: BeaverBS step2
 version: 1
 
 on:
-  xdxtools:
+  otter:
     workflow: BeaverBS
     phase: step2
     modes: [RRBS, WGBS, BSSEQ]
 
 defaults:
   shell: bash
-  environment: xdxtools-core
+  environment: otter-core
   observability:
     metrics: task
     capture_stdout: true
@@ -651,7 +653,7 @@ jobs:
 
     steps:
       - name: Run Bismark
-        environment: xdxtools-core
+        environment: otter-core
         run: |
           bismark --genome "${{ inputs.genome }}" \
             -1 "${{ inputs.read1 }}" \
@@ -863,12 +865,12 @@ needs: [prepare_reference]
 
 ---
 
-## 8. Xdxtools 配置 Adapter
+## 8. Otter 配置 Adapter
 
 ### 8.1 原则
 
-- `craftmake` 不 import `xdxtools/internal/config`。
-- 不逐字复制 xdxtools 的所有 Go struct。
+- `craftmake` 不 import `otter/internal/config`。
+- 不逐字复制 otter 的所有 Go struct。
 - Adapter 定义版本化、面向 runtime 的规范模型。
 - 对旧式 flat YAML 和当前 nested YAML 做兼容归一化。
 - Adapter 只读取，不修改用户配置。
@@ -924,7 +926,7 @@ Paths
 2. 配置中 `metadata.SIDs`。
 3. 首版不主动扫描 FASTQ；如果两者都缺失，报配置错误。
 
-FASTQ 扫描仍由 `xdxtools` 负责。
+FASTQ 扫描仍由 `otter` 负责。
 
 ### 8.4 Species 数组映射
 
@@ -938,7 +940,7 @@ FASTQ 扫描仍由 `xdxtools` 负责。
 
 1. 读取 Workflow YAML。
 2. 校验 schema version。
-3. 读取并规范化 xdxtools config。
+3. 读取并规范化 otter config。
 4. 建立 sample/species context。
 5. 合并 defaults、job 和 step 配置。
 6. 根据 dimensions 展开逻辑任务。
@@ -1634,7 +1636,7 @@ craftmake/
       task_runner.go
 
     adapters/
-      xdxtools/
+      otter/
         config.go
         loader.go
         normalize.go
@@ -1779,7 +1781,7 @@ craftmake/
 
 ---
 
-## 阶段 2：Xdxtools Adapter 与 YAML Compiler
+## 阶段 2：Otter Adapter 与 YAML Compiler
 
 ### 目标
 
@@ -1789,7 +1791,7 @@ craftmake/
 
 - 定义 WorkflowSpec Go struct。
 - 实现 YAML schema/version 校验。
-- 实现 xdxtools config adapter。
+- 实现 otter config adapter。
 - 规范化 samples/species/paths。
 - 实现严格模板解析。
 - 实现 defaults/job/step 合并。
@@ -2027,13 +2029,13 @@ BeaverPDX：
 
 ---
 
-## 阶段 8：Deferred — Xdxtools 集成
+## 阶段 8：Deferred — Otter 集成
 
 本阶段记录但暂不实施。
 
 未来工作：
 
-- `xdxtools run` 增加执行器选择。
+- `otter run` 增加执行器选择。
 - 以子进程调用 `craftmake`。
 - 信号转发。
 - JSONL 事件协议。
@@ -2060,7 +2062,7 @@ BeaverPDX：
 - 资源与展开维度比较。
 - 小型 fixture 结果摘要比较。
 - 四个 workflow 家族 parity gate。
-- 决定是否在 xdxtools 中默认 native。
+- 决定是否在 otter 中默认 native。
 
 当前迁移只做独立输出契约测试，不做正式双执行器系统。
 
@@ -2096,7 +2098,7 @@ BeaverPDX：
 
 不包含：
 
-- xdxtools 默认执行器切换。
+- otter 默认执行器切换。
 - Snakemake parity gate。
 
 ---
@@ -2107,7 +2109,7 @@ BeaverPDX：
 
 - YAML model。
 - Template lexer/parser/evaluator。
-- Xdxtools config normalization。
+- Otter config normalization。
 - Scope/dimensions expansion。
 - group_by。
 - Output producer mapping。
@@ -2263,7 +2265,7 @@ Task runner 写 result 文件，controller 写 SQLite，存在一致性风险。
 完成阶段 1–2：
 
 - CLI 可用。
-- Xdxtools config 可读。
+- Otter config 可读。
 - YAML 可 validate。
 - DAG 可 plan。
 
@@ -2300,7 +2302,7 @@ Task runner 写 result 文件，controller 写 SQLite，存在一致性风险。
 
 - 单二进制发布。
 - 独立文档和 workflow 资产。
-- 不依赖 xdxtools 集成或 Snakemake parity。
+- 不依赖 otter 集成或 Snakemake parity。
 
 当前状态：发布归档、checksums、CI/release workflow 和 README 已完成；正式发布前仍需在目标 Linux 环境完成安装布局、Local smoke、Slurm smoke 和旧数据库迁移验收。
 
@@ -2322,7 +2324,7 @@ Task runner 写 result 文件，controller 写 SQLite，存在一致性风险。
 - SQLite 驱动选择。
 - Cobra 版本策略。
 - YAML schema version 1 的字段清单。
-- Xdxtools config fixture 是否覆盖旧/新格式。
+- Otter config fixture 是否覆盖旧/新格式。
 - Slurm 最低支持版本和 `sacct --json` 降级策略。
 - 默认状态目录。
 - 默认日志目录。

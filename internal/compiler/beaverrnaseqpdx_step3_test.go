@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fallingstar10/craftmake/internal/adapters/xdxtools"
+	"github.com/fallingstar10/craftmake/internal/adapters/otter"
 	"github.com/fallingstar10/craftmake/internal/compiler"
 	"github.com/fallingstar10/craftmake/internal/spec"
 )
@@ -16,7 +16,7 @@ func TestCompileBeaverRNASEQPDXStep3Fixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	context, err := xdxtools.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverrnaseqpdx-step3.yaml"))
+	context, err := otter.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverrnaseqpdx-step3.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestCompileBeaverRNASEQPDXStep3Fixture(t *testing.T) {
 		t.Fatalf("unexpected splicing resources: %#v", splicingTask.Resources)
 	}
 	splicingCommand := splicingTask.Steps[0].Command
-	if !strings.Contains(splicingCommand, "gomats run") || !strings.Contains(splicingCommand, "--pdxmode 1") {
+	if !strings.Contains(splicingCommand, "matsrun run") || !strings.Contains(splicingCommand, "--pdxmode 1") {
 		t.Fatalf("unexpected RNA-seq PDX splicing command: %q", splicingCommand)
 	}
 	if !strings.Contains(splicingCommand, "RNASplicing_NOTRUN") || !strings.Contains(splicingCommand, "RNASplicing_DONE") {

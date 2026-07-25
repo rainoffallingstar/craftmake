@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fallingstar10/craftmake/internal/adapters/xdxtools"
+	"github.com/fallingstar10/craftmake/internal/adapters/otter"
 	"github.com/fallingstar10/craftmake/internal/compiler"
 	"github.com/fallingstar10/craftmake/internal/spec"
 )
@@ -16,7 +16,7 @@ func TestCompileBeaverRNASEQPDXStep2CheckFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	context, err := xdxtools.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverrnaseqpdx-step2-check.yaml"))
+	context, err := otter.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverrnaseqpdx-step2-check.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,21 +49,21 @@ func TestCompileBeaverRNASEQPDXStep2CheckFixture(t *testing.T) {
 		t.Fatalf("RNA-seq PDX patch task should bind Picard to the active environment Java runtime: %q", patchTask.Steps[0].Command)
 	}
 
-	xenofilterTask := plan.TaskByID["BeaverRNASEQPDX/step2-check/xenofilter"]
-	if xenofilterTask == nil || len(xenofilterTask.Inputs["patched_bams"]) != 4 || len(xenofilterTask.Dependencies) != 4 {
-		t.Fatalf("unexpected RNA-seq Xenofilter aggregation: %#v", xenofilterTask)
+	xenofilxTask := plan.TaskByID["BeaverRNASEQPDX/step2-check/xenofilx"]
+	if xenofilxTask == nil || len(xenofilxTask.Inputs["patched_bams"]) != 4 || len(xenofilxTask.Dependencies) != 4 {
+		t.Fatalf("unexpected RNA-seq Xenofilx aggregation: %#v", xenofilxTask)
 	}
-	xenofilterCommand := xenofilterTask.Steps[0].Command
-	if !strings.Contains(xenofilterCommand, "for graft_bam") || !strings.Contains(xenofilterCommand, `xenofilter_command+=(--graft "$graft_bam")`) || !strings.Contains(xenofilterCommand, "--mm-threshold 4") || !strings.Contains(xenofilterCommand, "--graft-ref '") || !strings.Contains(xenofilterCommand, "--host-ref '") || !strings.Contains(xenofilterCommand, "xenofilter_exit_code") || !strings.Contains(xenofilterCommand, "temporary_filtered_directory") {
-		t.Fatalf("unexpected RNA-seq Xenofilter command: %q", xenofilterCommand)
+	xenofilxCommand := xenofilxTask.Steps[0].Command
+	if !strings.Contains(xenofilxCommand, "for graft_bam") || !strings.Contains(xenofilxCommand, `xenofilx_command+=(--graft "$graft_bam")`) || !strings.Contains(xenofilxCommand, "--mm-threshold 4") || !strings.Contains(xenofilxCommand, "--graft-ref '") || !strings.Contains(xenofilxCommand, "--host-ref '") || !strings.Contains(xenofilxCommand, "xenofilx_exit_code") || !strings.Contains(xenofilxCommand, "temporary_filtered_directory") {
+		t.Fatalf("unexpected RNA-seq Xenofilx command: %q", xenofilxCommand)
 	}
-	if strings.Contains(xenofilterCommand, "--bisulfite") {
-		t.Fatalf("RNA-seq Xenofilter command must not enable bisulfite mode: %q", xenofilterCommand)
+	if strings.Contains(xenofilxCommand, "--bisulfite") {
+		t.Fatalf("RNA-seq Xenofilx command must not enable bisulfite mode: %q", xenofilxCommand)
 	}
 
 	filteredTask := plan.TaskByID["BeaverRNASEQPDX/step2-check/filtered_artifacts/sample=sample-a"]
-	if filteredTask == nil || !containsTaskID(filteredTask.Dependencies, xenofilterTask.ID) {
-		t.Fatalf("filtered BAM validation should depend on RNA-seq Xenofilter: %#v", filteredTask)
+	if filteredTask == nil || !containsTaskID(filteredTask.Dependencies, xenofilxTask.ID) {
+		t.Fatalf("filtered BAM validation should depend on RNA-seq Xenofilx: %#v", filteredTask)
 	}
 	if filteredTask.Inputs["filtered_bam"][0] != filepath.Join("workflow", "bsmap", "Filtered_bams", "sample-a_fixed_human_Filtered.bam") {
 		t.Fatalf("unexpected RNA-seq filtered graft BAM path: %#v", filteredTask.Inputs["filtered_bam"])

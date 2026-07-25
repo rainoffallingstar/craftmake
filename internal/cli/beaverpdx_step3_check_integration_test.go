@@ -23,7 +23,7 @@ func TestBeaverPDXStep3CheckRunsLocallyAndUsesCache(t *testing.T) {
 	commandEnvironment := append(
 		os.Environ(),
 		"PATH="+toolDirectory+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"METHRIX_CLI="+filepath.Join(toolDirectory, "methrix-cli-override"),
+		"METHX="+filepath.Join(toolDirectory, "methx-override"),
 	)
 	firstRunOutput := runCraftmake(t, binaryPath, commandEnvironment,
 		"run",
@@ -100,10 +100,10 @@ func writeBeaverPDXStep3CheckProjectFixture(t *testing.T, projectDirectory strin
 			filepath.Join("workflow", "bsmap", "Filtered_bams", sampleID+"_fixed_human_Filtered.bam"),
 			filepath.Join("workflow", "trim", sampleID+"_R1.fastq.gz_trimming_report.txt"),
 			filepath.Join("workflow", "trim", sampleID+"_R2.fastq.gz_trimming_report.txt"),
-			filepath.Join("workflow", "fastqc_raw", sampleID+"_R1_fqc", "fastqc_data.txt"),
-			filepath.Join("workflow", "fastqc_raw", sampleID+"_R2_fqc", "fastqc_data.txt"),
-			filepath.Join("workflow", "fastqc_clean", sampleID+"_val_1_fqc", "fastqc_data.txt"),
-			filepath.Join("workflow", "fastqc_clean", sampleID+"_val_2_fqc", "fastqc_data.txt"),
+			filepath.Join("workflow", "fastqc_raw", sampleID+"_R1_fastqcx", "fastqc_data.txt"),
+			filepath.Join("workflow", "fastqc_raw", sampleID+"_R2_fastqcx", "fastqc_data.txt"),
+			filepath.Join("workflow", "fastqc_clean", sampleID+"_val_1_fastqcx", "fastqc_data.txt"),
+			filepath.Join("workflow", "fastqc_clean", sampleID+"_val_2_fastqcx", "fastqc_data.txt"),
 			filepath.Join("workflow", "bsmap", "human", sampleID+"_val_1_bismark_bt2_pe.bam"),
 			filepath.Join("workflow", "bsmap", "human", sampleID+"_val_1_bismark_bt2_PE_report.txt"),
 			filepath.Join("workflow", "bsmap", "human", sampleID+"_val_1_bismark_bt2_pe.nucleotide_stats.txt"),

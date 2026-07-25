@@ -1,4 +1,4 @@
-package xdxtools
+package otter
 
 import (
 	"os"

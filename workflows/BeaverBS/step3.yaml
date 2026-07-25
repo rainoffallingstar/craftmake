@@ -1,7 +1,7 @@
 name: BeaverBS step3
 version: 1
 on:
-  xdxtools:
+  otter:
     workflow: BeaverBS
     phase: step3
     modes: [RRBS, WGBS, BSSEQ]
@@ -28,15 +28,15 @@ jobs:
       partition: cpu
     steps:
       - name: Sort BAM by read name
-        environment: xdxtools-core
+        environment: otter-core
         run: |
           mkdir -p "$(dirname '${{ outputs.name_sorted_bam }}')" '${{ config.directories.methylation_call }}'
           samtools sort -@ '${{ resources.cores }}' -n -o '${{ outputs.name_sorted_bam }}.tmp.bam' '${{ inputs.bam }}'
       - name: Retain paired reads
         run: |
-          paireads '${{ outputs.name_sorted_bam }}.tmp.bam' '${{ outputs.name_sorted_bam }}'
+          pairbam '${{ outputs.name_sorted_bam }}.tmp.bam' '${{ outputs.name_sorted_bam }}'
           rm -f '${{ outputs.name_sorted_bam }}.tmp.bam'
       - name: Extract methylation calls
-        environment: xdxtools-core
+        environment: otter-core
         run: |
           bismark_methylation_extractor --paired-end --gzip --output_dir '${{ config.directories.methylation_call }}' --comprehensive --merge_non_CpG --bedGraph --multicore '${{ resources.cores }}' --buffer_size 34G '${{ outputs.name_sorted_bam }}'

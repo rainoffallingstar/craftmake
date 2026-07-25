@@ -26,7 +26,7 @@ func TestCraftmakeBinaryExitCodeContract(t *testing.T) {
 	writeTextFile(t, compilationFailureWorkflowPath, `name: Invalid resource workflow
 version: 1
 on:
-  xdxtools:
+  otter:
     workflow: BeaverBS
     phase: step1
     modes: [RRBS]
@@ -38,6 +38,24 @@ jobs:
     resources:
       cores: 1
       memory: definitely-not-memory
+    steps:
+      - run: printf 'unreachable\n'
+`)
+
+	legacyTriggerWorkflowPath := filepath.Join(temporaryDirectory, "legacy-trigger.yaml")
+	writeTextFile(t, legacyTriggerWorkflowPath, `name: Legacy trigger workflow
+version: 1
+on:
+  xdxtools:
+    workflow: BeaverBS
+    phase: step1
+    modes: [RRBS]
+jobs:
+  unreachable:
+    scope: global
+    resources:
+      cores: 1
+      memory: 32M
     steps:
       - run: printf 'unreachable\n'
 `)
@@ -67,11 +85,21 @@ jobs:
 		{
 			name:             "configuration error",
 			expectedExitCode: 3,
-			expectedOutput:   "read xdxtools config",
+			expectedOutput:   "read otter config",
 			arguments: []string{
 				"validate",
 				"--config", filepath.Join(temporaryDirectory, "missing-config.yaml"),
 				"--workflow", smokeWorkflowPath,
+			},
+		},
+		{
+			name:             "legacy workflow trigger rejected",
+			expectedExitCode: 3,
+			expectedOutput:   "on.otter.workflow and on.otter.phase are required",
+			arguments: []string{
+				"validate",
+				"--config", smokeConfigurationPath,
+				"--workflow", legacyTriggerWorkflowPath,
 			},
 		},
 		{
@@ -141,7 +169,7 @@ func TestCraftmakeBinaryReturnsCancelledExitCodeAfterTerminationSignal(t *testin
 	writeTextFile(t, workflowPath, `name: Cancellation workflow
 version: 1
 on:
-  xdxtools:
+  otter:
     workflow: BeaverBS
     phase: step1
     modes: [RRBS]

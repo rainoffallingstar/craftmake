@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/fallingstar10/craftmake/internal/adapters/xdxtools"
+	"github.com/fallingstar10/craftmake/internal/adapters/otter"
 	"github.com/fallingstar10/craftmake/internal/compiler"
 	"github.com/fallingstar10/craftmake/internal/spec"
 )
@@ -15,7 +15,7 @@ func TestCompileBeaverPDXStep1Fixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	context, err := xdxtools.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverpdx-step1.yaml"))
+	context, err := otter.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverpdx-step1.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,6 +42,13 @@ func TestCompileBeaverPDXStep1Fixture(t *testing.T) {
 	}
 	if fastqcTask.Inputs["read1"][0] != filepath.Join("data", "sample-a_R1.fastq.gz") {
 		t.Fatalf("unexpected PDX sample input: %#v", fastqcTask.Inputs["read1"])
+	}
+	if fastqcTask.Outputs["read1_data"] != filepath.Join("workflow", "fastqc_raw", "sample-a_R1_fastqcx", "fastqc_data.txt") {
+		t.Fatalf("unexpected PDX pre-trim Fastqcx output %q", fastqcTask.Outputs["read1_data"])
+	}
+	fastqcAfterTask := plan.TaskByID["BeaverPDX/step1/fastqc_after/sample=sample-a"]
+	if fastqcAfterTask == nil || fastqcAfterTask.Outputs["read2_data"] != filepath.Join("workflow", "fastqc_clean", "sample-a_val_2_fastqcx", "fastqc_data.txt") {
+		t.Fatalf("unexpected PDX post-trim Fastqcx task: %#v", fastqcAfterTask)
 	}
 	checkerTask := plan.TaskByID["BeaverPDX/step1/step1_checker"]
 	if checkerTask == nil || len(checkerTask.Dependencies) != 6 {

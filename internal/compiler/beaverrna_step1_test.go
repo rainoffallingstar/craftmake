@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fallingstar10/craftmake/internal/adapters/xdxtools"
+	"github.com/fallingstar10/craftmake/internal/adapters/otter"
 	"github.com/fallingstar10/craftmake/internal/compiler"
 	"github.com/fallingstar10/craftmake/internal/spec"
 )
@@ -16,7 +16,7 @@ func TestCompileBeaverRNAStep1Fixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	context, err := xdxtools.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverrna-step1.yaml"))
+	context, err := otter.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverrna-step1.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,6 +44,9 @@ func TestCompileBeaverRNAStep1Fixture(t *testing.T) {
 	if fastqcBeforeTask == nil || len(fastqcBeforeTask.Dependencies) != 0 {
 		t.Fatalf("unexpected BeaverRNA pre-trim FastQC task: %#v", fastqcBeforeTask)
 	}
+	if fastqcBeforeTask.Outputs["read1_data"] != filepath.Join("workflow", "fastqc_raw", "sample-a_R1_fastqcx", "fastqc_data.txt") {
+		t.Fatalf("unexpected BeaverRNA pre-trim Fastqcx output %q", fastqcBeforeTask.Outputs["read1_data"])
+	}
 	trimTask := plan.TaskByID["BeaverRNA/step1/trim_reads/sample=sample-a"]
 	if trimTask == nil {
 		t.Fatal("missing BeaverRNA sample-a trim task")
@@ -57,6 +60,9 @@ func TestCompileBeaverRNAStep1Fixture(t *testing.T) {
 	fastqcAfterTask := plan.TaskByID["BeaverRNA/step1/fastqc_after/sample=sample-a"]
 	if fastqcAfterTask == nil || !containsTaskID(fastqcAfterTask.Dependencies, trimTask.ID) {
 		t.Fatalf("post-trim FastQC should depend on sample-a trimming: %#v", fastqcAfterTask)
+	}
+	if fastqcAfterTask.Outputs["read2_data"] != filepath.Join("workflow", "fastqc_clean", "sample-a_val_2_fastqcx", "fastqc_data.txt") {
+		t.Fatalf("unexpected BeaverRNA post-trim Fastqcx output %q", fastqcAfterTask.Outputs["read2_data"])
 	}
 	checkerTask := plan.TaskByID["BeaverRNA/step1/step1_checker"]
 	if checkerTask == nil || len(checkerTask.Dependencies) != 6 {

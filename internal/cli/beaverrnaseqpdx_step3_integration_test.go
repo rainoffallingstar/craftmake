@@ -93,7 +93,7 @@ printf 'gene_a\t10\n'
 printf 'gene_b\t20\n'
 printf '__source__\t%s|%s\n' "$bam_path" "$annotation_path"
 `)
-	writeExecutable(t, filepath.Join(toolDirectory, "gomats"), `#!/usr/bin/env bash
+	writeExecutable(t, filepath.Join(toolDirectory, "matsrun"), `#!/usr/bin/env bash
 set -euo pipefail
 if [ "${1:-}" != "run" ]; then exit 2; fi
 shift

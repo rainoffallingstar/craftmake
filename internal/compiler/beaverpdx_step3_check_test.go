@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fallingstar10/craftmake/internal/adapters/xdxtools"
+	"github.com/fallingstar10/craftmake/internal/adapters/otter"
 	"github.com/fallingstar10/craftmake/internal/compiler"
 	"github.com/fallingstar10/craftmake/internal/spec"
 )
@@ -16,7 +16,7 @@ func TestCompileBeaverPDXStep3CheckFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	context, err := xdxtools.Load(filepath.Join(repositoryRoot, "fixtures", "BeaverPDX", "step3-check.yaml"))
+	context, err := otter.Load(filepath.Join(repositoryRoot, "fixtures", "BeaverPDX", "step3-check.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,6 +35,10 @@ func TestCompileBeaverPDXStep3CheckFixture(t *testing.T) {
 	if artifactTask.Inputs["filtered_bam"][0] != filepath.Join("workflow", "bsmap", "Filtered_bams", "sample-a_fixed_human_Filtered.bam") {
 		t.Fatalf("unexpected filtered graft BAM input: %#v", artifactTask.Inputs["filtered_bam"])
 	}
+	if artifactTask.Inputs["fastqc_before_r1"][0] != filepath.Join("workflow", "fastqc_raw", "sample-a_R1_fastqcx", "fastqc_data.txt") ||
+		artifactTask.Inputs["fastqc_after_r2"][0] != filepath.Join("workflow", "fastqc_clean", "sample-a_val_2_fastqcx", "fastqc_data.txt") {
+		t.Fatalf("unexpected PDX Fastqcx artifact inputs: %#v", artifactTask.Inputs)
+	}
 
 	speciesTask := plan.TaskByID["BeaverPDX/step3-check/species_qc_artifacts/sample=sample-b/species=mouse"]
 	if speciesTask == nil || len(speciesTask.Inputs) != 2 {
@@ -48,10 +52,10 @@ func TestCompileBeaverPDXStep3CheckFixture(t *testing.T) {
 	if referenceTask == nil || referenceTask.Inputs["genome"][0] != filepath.Join(repositoryRoot, "fixtures", "BeaverPDX", "references", "human.fasta") {
 		t.Fatalf("unexpected PDX graft reference task: %#v", referenceTask)
 	}
-	if !strings.Contains(referenceTask.Steps[0].Command, "--contigs") || !strings.Contains(referenceTask.Steps[0].Command, `contig_arguments+=(--contigs "$contig")`) || !strings.Contains(referenceTask.Steps[0].Command, "methrix_extract_command") {
+	if !strings.Contains(referenceTask.Steps[0].Command, "--contigs") || !strings.Contains(referenceTask.Steps[0].Command, `contig_arguments+=(--contigs "$contig")`) || !strings.Contains(referenceTask.Steps[0].Command, "methx_extract_command") {
 		t.Fatalf("PDX Methrix reference preparation lacks repeated nonstandard contig flags: %s", referenceTask.Steps[0].Command)
 	}
-	if !strings.Contains(referenceTask.Steps[0].Command, "METHRIX_CLI:-methrix-cli") {
+	if !strings.Contains(referenceTask.Steps[0].Command, "METHX:-methx") {
 		t.Fatalf("PDX Methrix reference preparation should support an explicit executable override: %s", referenceTask.Steps[0].Command)
 	}
 
@@ -65,7 +69,7 @@ func TestCompileBeaverPDXStep3CheckFixture(t *testing.T) {
 	if strings.Contains(methrixTask.Steps[0].Command, "--annotation-dir") {
 		t.Fatalf("PDX Methrix process command uses unsupported --annotation-dir: %s", methrixTask.Steps[0].Command)
 	}
-	if !strings.Contains(methrixTask.Steps[0].Command, "METHRIX_CLI:-methrix-cli") {
+	if !strings.Contains(methrixTask.Steps[0].Command, "METHX:-methx") {
 		t.Fatalf("PDX Methrix process should support an explicit executable override: %s", methrixTask.Steps[0].Command)
 	}
 

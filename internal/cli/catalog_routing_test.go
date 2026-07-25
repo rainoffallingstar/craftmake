@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func TestLoadPlanAutomaticallyRoutesXdxtoolsConfigurations(t *testing.T) {
+func TestLoadPlanAutomaticallyRoutesOtterConfigurations(t *testing.T) {
 	repositoryRoot := cliRepositoryRoot(t)
 	testCases := []struct {
 		name             string

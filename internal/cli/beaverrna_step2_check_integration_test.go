@@ -78,7 +78,7 @@ func TestBeaverRNAStep2CheckRunsLocallyAndUsesCache(t *testing.T) {
 func writeFakeBeaverRNAStep2CheckTools(t *testing.T, toolDirectory string) {
 	t.Helper()
 	writeFakeBeaverBSStep3CheckTools(t, toolDirectory)
-	writeExecutable(t, filepath.Join(toolDirectory, "htseq2matrix"), `#!/usr/bin/env bash
+	writeExecutable(t, filepath.Join(toolDirectory, "seq2mat"), `#!/usr/bin/env bash
 set -euo pipefail
 output_directory=""
 while [ "$#" -gt 0 ]; do
@@ -92,7 +92,7 @@ mkdir -p "$output_directory"
 printf 'count matrix\n' > "$output_directory/matrix_count.txt"
 printf 'normalized matrix\n' > "$output_directory/matrix_norm.txt"
 `)
-	writeExecutable(t, filepath.Join(toolDirectory, "gomats"), `#!/usr/bin/env bash
+	writeExecutable(t, filepath.Join(toolDirectory, "matsrun"), `#!/usr/bin/env bash
 set -euo pipefail
 if [ "$1" != "run" ]; then exit 2; fi
 shift
@@ -119,10 +119,10 @@ func writeBeaverRNAStep2CheckProjectFixture(t *testing.T, projectDirectory strin
 			filepath.Join("workflow", "QC", "qualimap", sampleID+"_human", "qualimapReport.html"),
 			filepath.Join("workflow", "trim", sampleID+"_R1.fastq.gz_trimming_report.txt"),
 			filepath.Join("workflow", "trim", sampleID+"_R2.fastq.gz_trimming_report.txt"),
-			filepath.Join("workflow", "fastqc_raw", sampleID+"_R1_fqc", "fastqc_data.txt"),
-			filepath.Join("workflow", "fastqc_raw", sampleID+"_R2_fqc", "fastqc_data.txt"),
-			filepath.Join("workflow", "fastqc_clean", sampleID+"_val_1_fqc", "fastqc_data.txt"),
-			filepath.Join("workflow", "fastqc_clean", sampleID+"_val_2_fqc", "fastqc_data.txt"),
+			filepath.Join("workflow", "fastqc_raw", sampleID+"_R1_fastqcx", "fastqc_data.txt"),
+			filepath.Join("workflow", "fastqc_raw", sampleID+"_R2_fastqcx", "fastqc_data.txt"),
+			filepath.Join("workflow", "fastqc_clean", sampleID+"_val_1_fastqcx", "fastqc_data.txt"),
+			filepath.Join("workflow", "fastqc_clean", sampleID+"_val_2_fastqcx", "fastqc_data.txt"),
 		)
 	}
 	for _, relativePath := range inputPaths {

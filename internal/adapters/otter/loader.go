@@ -1,4 +1,4 @@
-package xdxtools
+package otter
 
 import (
 	"fmt"
@@ -13,11 +13,11 @@ import (
 func Load(path string) (*compiler.Context, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read xdxtools config %q: %w", path, err)
+		return nil, fmt.Errorf("read otter config %q: %w", path, err)
 	}
 	var raw map[string]any
 	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("parse xdxtools config %q: %w", path, err)
+		return nil, fmt.Errorf("parse otter config %q: %w", path, err)
 	}
 	normalizeMap(raw)
 	baseDirectory := filepath.Dir(path)
@@ -30,7 +30,7 @@ func Load(path string) (*compiler.Context, error) {
 
 	sampleIDs := firstStringSlice(raw, "metadata.sids", "workflow.samples", "samples", "sids")
 	if len(sampleIDs) == 0 {
-		return nil, fmt.Errorf("xdxtools config must define workflow.samples, metadata.SIDs, samples, or SIDs")
+		return nil, fmt.Errorf("otter config must define workflow.samples, metadata.SIDs, samples, or SIDs")
 	}
 
 	fastqDirectory := firstString(raw, "input.fastq_dir", "output.raw_dir", "directories.raw_dir")
@@ -62,7 +62,7 @@ func Load(path string) (*compiler.Context, error) {
 		speciesNames = firstStringSlice(raw, "workflow.species.name", "species")
 	}
 	if len(speciesNames) == 0 {
-		return nil, fmt.Errorf("xdxtools config must define at least one species")
+		return nil, fmt.Errorf("otter config must define at least one species")
 	}
 	genomeFasta := firstStringSlice(raw, "reference.files.fasta", "reference.genome_fasta", "genome_fasta")
 	genomeIndex := firstStringSlice(raw, "reference.indices.genome", "reference.genome_index", "genomefile")

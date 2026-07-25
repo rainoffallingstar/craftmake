@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fallingstar10/craftmake/internal/adapters/xdxtools"
+	"github.com/fallingstar10/craftmake/internal/adapters/otter"
 	"github.com/fallingstar10/craftmake/internal/compiler"
 	"github.com/fallingstar10/craftmake/internal/spec"
 )
@@ -16,7 +16,7 @@ func TestCompileBeaverRNASEQPDXStep1Fixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	context, err := xdxtools.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverrnaseqpdx-step1.yaml"))
+	context, err := otter.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverrnaseqpdx-step1.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,6 +46,13 @@ func TestCompileBeaverRNASEQPDXStep1Fixture(t *testing.T) {
 	fastqcTask := plan.TaskByID["BeaverRNASEQPDX/step1/fastqc_before/sample=sample-a"]
 	if fastqcTask == nil || len(fastqcTask.Dimensions) != 1 || fastqcTask.Dimensions["sample"] != "sample-a" {
 		t.Fatalf("RNA-seq PDX step1 should expand by sample only: %#v", fastqcTask)
+	}
+	if fastqcTask.Outputs["read1_data"] != filepath.Join("workflow", "fastqc_raw", "sample-a_R1_fastqcx", "fastqc_data.txt") {
+		t.Fatalf("unexpected RNA-seq PDX pre-trim Fastqcx output %q", fastqcTask.Outputs["read1_data"])
+	}
+	fastqcAfterTask := plan.TaskByID["BeaverRNASEQPDX/step1/fastqc_after/sample=sample-a"]
+	if fastqcAfterTask == nil || fastqcAfterTask.Outputs["read2_data"] != filepath.Join("workflow", "fastqc_clean", "sample-a_val_2_fastqcx", "fastqc_data.txt") {
+		t.Fatalf("unexpected RNA-seq PDX post-trim Fastqcx task: %#v", fastqcAfterTask)
 	}
 	trimTask := plan.TaskByID["BeaverRNASEQPDX/step1/trim_reads/sample=sample-a"]
 	if trimTask == nil || !strings.Contains(trimTask.Steps[0].Command, "--three_prime_clip_R2 '4'") {

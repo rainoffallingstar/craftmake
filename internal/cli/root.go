@@ -12,7 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/fallingstar10/craftmake/internal/adapters/xdxtools"
+	"github.com/fallingstar10/craftmake/internal/adapters/otter"
 	"github.com/fallingstar10/craftmake/internal/backend"
 	"github.com/fallingstar10/craftmake/internal/backend/local"
 	"github.com/fallingstar10/craftmake/internal/backend/slurm"
@@ -44,7 +44,7 @@ type commonOptions struct {
 func NewRootCommand(buildInfo BuildInfo) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "craftmake",
-		Short:         "Native workflow runner for xdxtools pipelines",
+		Short:         "Native workflow runner for otter pipelines",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       fmt.Sprintf("%s+%s (%s)", buildInfo.Version, buildInfo.Commit, buildInfo.Date),
@@ -771,7 +771,7 @@ func newTaskRunnerCommand() *cobra.Command {
 
 func addPlanFlags(command *cobra.Command, options *commonOptions) {
 	command.Flags().StringVarP(&options.workflowPath, "workflow", "w", "", "Workflow YAML path; overrides automatic catalog routing")
-	command.Flags().StringVarP(&options.configPath, "config", "c", "", "xdxtools config YAML path")
+	command.Flags().StringVarP(&options.configPath, "config", "c", "", "otter config YAML path")
 	command.Flags().StringVar(&options.phase, "phase", "", "Workflow phase to resolve automatically, for example step2-check")
 	command.Flags().StringVar(&options.catalogDir, "catalog", "", "Workflow catalog root; defaults to CRAFTMAKE_WORKFLOW_CATALOG or installed workflows")
 	command.Flags().StringVar(&options.projectDir, "project-dir", "", "Project working directory")
@@ -788,7 +788,7 @@ func loadPlan(options *commonOptions) (*compiler.Plan, error) {
 		return nil, configurationError(fmt.Errorf("resolve config path: %w", err))
 	}
 	options.configPath = absoluteConfigPath
-	context, err := xdxtools.Load(options.configPath)
+	context, err := otter.Load(options.configPath)
 	if err != nil {
 		return nil, configurationError(err)
 	}
@@ -814,11 +814,11 @@ func loadPlan(options *commonOptions) (*compiler.Plan, error) {
 	if err != nil {
 		return nil, configurationError(err)
 	}
-	if !strings.EqualFold(workflow.On.Xdxtools.Workflow, context.Workflow.WorkflowName) {
-		return nil, configurationError(fmt.Errorf("workflow %q targets %s, but config resolves to %s", options.workflowPath, workflow.On.Xdxtools.Workflow, context.Workflow.WorkflowName))
+	if !strings.EqualFold(workflow.On.Otter.Workflow, context.Workflow.WorkflowName) {
+		return nil, configurationError(fmt.Errorf("workflow %q targets %s, but config resolves to %s", options.workflowPath, workflow.On.Otter.Workflow, context.Workflow.WorkflowName))
 	}
-	if options.phase != "" && workflow.On.Xdxtools.Phase != options.phase {
-		return nil, configurationError(fmt.Errorf("workflow %q declares phase %q, not requested phase %q", options.workflowPath, workflow.On.Xdxtools.Phase, options.phase))
+	if options.phase != "" && workflow.On.Otter.Phase != options.phase {
+		return nil, configurationError(fmt.Errorf("workflow %q declares phase %q, not requested phase %q", options.workflowPath, workflow.On.Otter.Phase, options.phase))
 	}
 	plan, err := compiler.Compile(workflow, context)
 	if err != nil {

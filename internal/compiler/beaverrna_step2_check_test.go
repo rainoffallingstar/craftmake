@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fallingstar10/craftmake/internal/adapters/xdxtools"
+	"github.com/fallingstar10/craftmake/internal/adapters/otter"
 	"github.com/fallingstar10/craftmake/internal/compiler"
 	"github.com/fallingstar10/craftmake/internal/spec"
 )
@@ -16,7 +16,7 @@ func TestCompileBeaverRNAStep2CheckFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	context, err := xdxtools.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverrna-step2-check.yaml"))
+	context, err := otter.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverrna-step2-check.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,20 +35,24 @@ func TestCompileBeaverRNAStep2CheckFixture(t *testing.T) {
 	if artifactTask.Inputs["counts"][0] != filepath.Join("workflow", "expression", "sample-a_human.txt") {
 		t.Fatalf("unexpected RNA-seq count input: %#v", artifactTask.Inputs["counts"])
 	}
+	if artifactTask.Inputs["fastqc_before_r1"][0] != filepath.Join("workflow", "fastqc_raw", "sample-a_R1_fastqcx", "fastqc_data.txt") ||
+		artifactTask.Inputs["fastqc_after_r2"][0] != filepath.Join("workflow", "fastqc_clean", "sample-a_val_2_fastqcx", "fastqc_data.txt") {
+		t.Fatalf("unexpected BeaverRNA Fastqcx artifact inputs: %#v", artifactTask.Inputs)
+	}
 
 	matrixTask := plan.TaskByID["BeaverRNA/step2-check/construct_expression_matrix"]
 	if matrixTask == nil || len(matrixTask.Inputs["sample_artifacts"]) != 2 || len(matrixTask.Dependencies) != 2 {
 		t.Fatalf("unexpected expression matrix aggregation: %#v", matrixTask)
 	}
 	if !strings.Contains(matrixTask.Steps[0].Command, "--postfix '_human.txt'") {
-		t.Fatalf("unexpected htseq2matrix command: %s", matrixTask.Steps[0].Command)
+		t.Fatalf("unexpected seq2mat command: %s", matrixTask.Steps[0].Command)
 	}
 
 	splicingTask := plan.TaskByID["BeaverRNA/step2-check/rnaseq_splicing"]
 	if splicingTask == nil || len(splicingTask.Dependencies) != 2 {
 		t.Fatalf("unexpected RNA splicing aggregation: %#v", splicingTask)
 	}
-	if !strings.Contains(splicingTask.Steps[0].Command, "gomats run") || !strings.Contains(splicingTask.Steps[0].Command, "--pdxmode 0") {
+	if !strings.Contains(splicingTask.Steps[0].Command, "matsrun run") || !strings.Contains(splicingTask.Steps[0].Command, "--pdxmode 0") {
 		t.Fatalf("unexpected RNA splicing command: %s", splicingTask.Steps[0].Command)
 	}
 

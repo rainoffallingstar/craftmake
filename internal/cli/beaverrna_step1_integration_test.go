@@ -38,12 +38,12 @@ func TestBeaverRNAStep1RunsLocallyAndUsesCache(t *testing.T) {
 	}
 
 	for _, expectedOutput := range []string{
-		"workflow/fastqc_raw/sample-a_R1_fqc/fastqc_data.txt",
-		"workflow/fastqc_raw/sample-b_R2_fqc/fastqc_data.txt",
+		"workflow/fastqc_raw/sample-a_R1_fastqcx/fastqc_data.txt",
+		"workflow/fastqc_raw/sample-b_R2_fastqcx/fastqc_data.txt",
 		"workflow/trim/sample-a_val_1.fq.gz",
 		"workflow/trim/sample-b_R2.fastq.gz_trimming_report.txt",
-		"workflow/fastqc_clean/sample-a_val_1_fqc/fastqc_data.txt",
-		"workflow/fastqc_clean/sample-b_val_2_fqc/fastqc_data.txt",
+		"workflow/fastqc_clean/sample-a_val_1_fastqcx/fastqc_data.txt",
+		"workflow/fastqc_clean/sample-b_val_2_fastqcx/fastqc_data.txt",
 		"workflow/log/step1_success.txt",
 	} {
 		if _, err := os.Stat(filepath.Join(projectDirectory, expectedOutput)); err != nil {

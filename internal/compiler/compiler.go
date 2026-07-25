@@ -18,13 +18,13 @@ func Compile(workflow *spec.WorkflowSpec, context *Context) (*Plan, error) {
 	if err := workflow.Validate(); err != nil {
 		return nil, err
 	}
-	if len(workflow.On.Xdxtools.Modes) > 0 && !containsFold(workflow.On.Xdxtools.Modes, context.Workflow.Mode) {
+	if len(workflow.On.Otter.Modes) > 0 && !containsFold(workflow.On.Otter.Modes, context.Workflow.Mode) {
 		return nil, fmt.Errorf("workflow %q does not support mode %q", workflow.Name, context.Workflow.Mode)
 	}
 
 	plan := &Plan{
-		Workflow: workflow.On.Xdxtools.Workflow,
-		Phase:    workflow.On.Xdxtools.Phase,
+		Workflow: workflow.On.Otter.Workflow,
+		Phase:    workflow.On.Otter.Phase,
 		Name:     workflow.Name,
 		TaskByID: make(map[string]*Task),
 		Source:   workflow,
@@ -180,7 +180,7 @@ func compileTaskSkeleton(workflow *spec.WorkflowSpec, jobID string, job spec.Job
 		maxAttempts = 1
 	}
 	compressSuccessLogs := resolveBoolean(job.Observability.CompressSuccessLogs, workflow.Defaults.Observability.CompressSuccessLogs, true)
-	return &Task{ID: stableTaskID(workflow.On.Xdxtools.Workflow, workflow.On.Xdxtools.Phase, jobID, dimensions), JobID: jobID, JobName: name, Workflow: workflow.On.Xdxtools.Workflow, Phase: workflow.On.Xdxtools.Phase, Scope: job.Scope, Dimensions: dimensions, Inputs: make(map[string][]string), Outputs: outputs, Resources: resources, Worker: workerPlan, Environment: choose(job.Environment, workflow.Defaults.Environment), Env: mergeMaps(workflow.Defaults.Env, job.Env), MaxAttempts: maxAttempts, CompressSuccessLogs: compressSuccessLogs}, nil
+	return &Task{ID: stableTaskID(workflow.On.Otter.Workflow, workflow.On.Otter.Phase, jobID, dimensions), JobID: jobID, JobName: name, Workflow: workflow.On.Otter.Workflow, Phase: workflow.On.Otter.Phase, Scope: job.Scope, Dimensions: dimensions, Inputs: make(map[string][]string), Outputs: outputs, Resources: resources, Worker: workerPlan, Environment: choose(job.Environment, workflow.Defaults.Environment), Env: mergeMaps(workflow.Defaults.Env, job.Env), MaxAttempts: maxAttempts, CompressSuccessLogs: compressSuccessLogs}, nil
 }
 
 func compileSteps(defaults spec.DefaultsSpec, job spec.JobSpec, values map[string]any) ([]protocol.StepManifest, error) {

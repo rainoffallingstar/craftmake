@@ -75,7 +75,7 @@ func TestBeaverRNASEQPDXStep3CheckRunsLocallyAndUsesCache(t *testing.T) {
 func writeFakeBeaverRNASEQPDXStep3CheckTools(t *testing.T, toolDirectory string) {
 	t.Helper()
 	writeFakeBeaverBSStep3CheckTools(t, toolDirectory)
-	writeExecutable(t, filepath.Join(toolDirectory, "htseq2matrix"), `#!/usr/bin/env bash
+	writeExecutable(t, filepath.Join(toolDirectory, "seq2mat"), `#!/usr/bin/env bash
 set -euo pipefail
 input_directory=""
 output_directory=""
@@ -112,10 +112,10 @@ func writeBeaverRNASEQPDXStep3CheckProjectFixture(t *testing.T, projectDirectory
 			filepath.Join("workflow", "bsmap", "Filtered_bams", sampleID+"_fixed_human_Filtered.bam"),
 			filepath.Join("workflow", "trim", sampleID+"_R1.fastq.gz_trimming_report.txt"),
 			filepath.Join("workflow", "trim", sampleID+"_R2.fastq.gz_trimming_report.txt"),
-			filepath.Join("workflow", "fastqc_raw", sampleID+"_R1_fqc", "fastqc_data.txt"),
-			filepath.Join("workflow", "fastqc_raw", sampleID+"_R2_fqc", "fastqc_data.txt"),
-			filepath.Join("workflow", "fastqc_clean", sampleID+"_val_1_fqc", "fastqc_data.txt"),
-			filepath.Join("workflow", "fastqc_clean", sampleID+"_val_2_fqc", "fastqc_data.txt"),
+			filepath.Join("workflow", "fastqc_raw", sampleID+"_R1_fastqcx", "fastqc_data.txt"),
+			filepath.Join("workflow", "fastqc_raw", sampleID+"_R2_fastqcx", "fastqc_data.txt"),
+			filepath.Join("workflow", "fastqc_clean", sampleID+"_val_1_fastqcx", "fastqc_data.txt"),
+			filepath.Join("workflow", "fastqc_clean", sampleID+"_val_2_fastqcx", "fastqc_data.txt"),
 		)
 		for _, speciesName := range []string{"human", "mouse"} {
 			inputPaths = append(inputPaths,

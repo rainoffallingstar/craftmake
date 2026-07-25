@@ -1,7 +1,7 @@
 name: BeaverPDX step3 check
 version: 1
 on:
-  xdxtools:
+  otter:
     workflow: BeaverPDX
     phase: step3-check
     modes: [RRBS, WGBS, BSSEQ]
@@ -23,10 +23,10 @@ jobs:
       filtered_bam: "${{ config.directories.bsmap.main }}/Filtered_bams/${{ sample.id }}_fixed_${{ config.workflow.species.graft }}_Filtered.bam"
       trim_report_r1: "${{ config.output.trim_dir }}/${{ sample.id }}_R1.fastq.gz_trimming_report.txt"
       trim_report_r2: "${{ config.output.trim_dir }}/${{ sample.id }}_R2.fastq.gz_trimming_report.txt"
-      fastqc_before_r1: "${{ config.directories.qc.before }}/${{ sample.id }}_R1_fqc/fastqc_data.txt"
-      fastqc_before_r2: "${{ config.directories.qc.before }}/${{ sample.id }}_R2_fqc/fastqc_data.txt"
-      fastqc_after_r1: "${{ config.directories.qc.after }}/${{ sample.id }}_val_1_fqc/fastqc_data.txt"
-      fastqc_after_r2: "${{ config.directories.qc.after }}/${{ sample.id }}_val_2_fqc/fastqc_data.txt"
+      fastqc_before_r1: "${{ config.directories.qc.before }}/${{ sample.id }}_R1_fastqcx/fastqc_data.txt"
+      fastqc_before_r2: "${{ config.directories.qc.before }}/${{ sample.id }}_R2_fastqcx/fastqc_data.txt"
+      fastqc_after_r1: "${{ config.directories.qc.after }}/${{ sample.id }}_val_1_fastqcx/fastqc_data.txt"
+      fastqc_after_r2: "${{ config.directories.qc.after }}/${{ sample.id }}_val_2_fastqcx/fastqc_data.txt"
     outputs:
       ready: "${{ config.directories.sid_log }}/step3-check/${{ sample.id }}.ready"
     resources:
@@ -76,10 +76,10 @@ jobs:
           mkdir -p "$(dirname '${{ outputs.reference_cpgs }}')"
           reference_path='${{ inputs.genome }}'
           output_path='${{ outputs.reference_cpgs }}'
-          methrix_cli="${METHRIX_CLI:-methrix-cli}"
-          methrix_extract_command=("$methrix_cli" extract-cpgs)
-          if "$methrix_cli" extract-cp-gs --help >/dev/null 2>&1; then
-            methrix_extract_command=("$methrix_cli" extract-cp-gs)
+          methx_cli="${METHX:-methx}"
+          methx_extract_command=("$methx_cli" extract-cpgs)
+          if "$methx_cli" extract-cp-gs --help >/dev/null 2>&1; then
+            methx_extract_command=("$methx_cli" extract-cp-gs)
           fi
           reference_directory="$(dirname "$reference_path")"
           genome_key='${{ config.workflow.species.graft }}'
@@ -107,7 +107,7 @@ jobs:
             if [ -f "$nearby_reference" ]; then
               cp -f "$nearby_reference" "$output_path"
             else
-              "${methrix_extract_command[@]}" --genome "$reference_path" --output "$output_path"
+              "${methx_extract_command[@]}" --genome "$reference_path" --output "$output_path"
               if grep -q 'cpgs: \[\]' "$output_path"; then
                 contigs=()
                 while IFS= read -r header; do
@@ -125,7 +125,7 @@ jobs:
                 for contig in "${contigs[@]}"; do
                   contig_arguments+=(--contigs "$contig")
                 done
-                "${methrix_extract_command[@]}" --genome "$reference_path" --output "$output_path" "${contig_arguments[@]}"
+                "${methx_extract_command[@]}" --genome "$reference_path" --output "$output_path" "${contig_arguments[@]}"
               fi
             fi
           fi
@@ -148,8 +148,8 @@ jobs:
       - name: Build Methrix object
         run: |
           mkdir -p '${{ config.directories.methylation_call }}/methrixh5'
-          methrix_cli="${METHRIX_CLI:-methrix-cli}"
-          "$methrix_cli" process --input '${{ config.directories.methylation_call }}' --output '${{ config.directories.methylation_call }}/methrixh5' --genome '${{ inputs.reference_cpgs }}' --threads '${{ resources.cores }}'
+          methx_cli="${METHX:-methx}"
+          "$methx_cli" process --input '${{ config.directories.methylation_call }}' --output '${{ config.directories.methylation_call }}/methrixh5' --genome '${{ inputs.reference_cpgs }}' --threads '${{ resources.cores }}'
 
   bismark_report:
     name: Build PDX graft Bismark sample report
@@ -170,7 +170,7 @@ jobs:
       partition: cpu
     steps:
       - name: Run Bismark report
-        environment: xdxtools-core
+        environment: otter-core
         run: |
           mkdir -p '${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}'
           bismark2report --dir '${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}' --output '${{ sample.id }}.html' --alignment_report '${{ inputs.alignment_report }}' --splitting_report '${{ inputs.splitting_report }}' --mbias_report '${{ inputs.mbias_report }}' --nucleotide_report '${{ inputs.nucleotide_report }}'
@@ -189,7 +189,7 @@ jobs:
       partition: cpu
     steps:
       - name: Run Bismark summary
-        environment: xdxtools-core
+        environment: otter-core
         run: |
           cd '${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}'
           bismark2summary *_val_1_bismark_bt2_pe.bam
@@ -211,7 +211,7 @@ jobs:
       partition: cpu
     steps:
       - name: Run QC summary
-        environment: xdxtools-core
+        environment: otter-core
         run: |
           mkdir -p '${{ config.directories.qc_summary }}'
           source_config='${{ config.directories.selfconfig }}/config.yaml'

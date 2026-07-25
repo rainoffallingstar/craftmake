@@ -1,7 +1,7 @@
 name: Smoke workflow
 version: 1
 on:
-  xdxtools:
+  otter:
     workflow: Smoke
     phase: step1
     modes: [RRBS]

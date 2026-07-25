@@ -1,13 +1,13 @@
 name: BeaverRNA step2 check
 version: 1
 on:
-  xdxtools:
+  otter:
     workflow: BeaverRNA
     phase: step2-check
     modes: [RNASEQ]
 defaults:
   shell: bash
-  environment: xdxtools-core
+  environment: otter-core
   observability:
     metrics: task
     capture_stdout: true
@@ -24,10 +24,10 @@ jobs:
       qualimap_report: "${{ config.directories.qualimap }}/${{ sample.id }}_${{ species.name }}/qualimapReport.html"
       trim_report_r1: "${{ config.output.trim_dir }}/${{ sample.id }}_R1.fastq.gz_trimming_report.txt"
       trim_report_r2: "${{ config.output.trim_dir }}/${{ sample.id }}_R2.fastq.gz_trimming_report.txt"
-      fastqc_before_r1: "${{ config.directories.qc.before }}/${{ sample.id }}_R1_fqc/fastqc_data.txt"
-      fastqc_before_r2: "${{ config.directories.qc.before }}/${{ sample.id }}_R2_fqc/fastqc_data.txt"
-      fastqc_after_r1: "${{ config.directories.qc.after }}/${{ sample.id }}_val_1_fqc/fastqc_data.txt"
-      fastqc_after_r2: "${{ config.directories.qc.after }}/${{ sample.id }}_val_2_fqc/fastqc_data.txt"
+      fastqc_before_r1: "${{ config.directories.qc.before }}/${{ sample.id }}_R1_fastqcx/fastqc_data.txt"
+      fastqc_before_r2: "${{ config.directories.qc.before }}/${{ sample.id }}_R2_fastqcx/fastqc_data.txt"
+      fastqc_after_r1: "${{ config.directories.qc.after }}/${{ sample.id }}_val_1_fastqcx/fastqc_data.txt"
+      fastqc_after_r2: "${{ config.directories.qc.after }}/${{ sample.id }}_val_2_fastqcx/fastqc_data.txt"
     outputs:
       ready: "${{ config.directories.sid_log }}/step2-check/${{ sample.id }}_${{ species.name }}.ready"
     resources:
@@ -57,7 +57,7 @@ jobs:
       - name: Build expression matrices
         run: |
           mkdir -p '${{ config.directories.beta_matrix }}'
-          htseq2matrix --htseq_dir '${{ config.directories.methylation_call }}' --output_dir '${{ config.directories.beta_matrix }}' --postfix '_${{ config.workflow.species.graft }}.txt'
+          seq2mat --htseq_dir '${{ config.directories.methylation_call }}' --output_dir '${{ config.directories.beta_matrix }}' --postfix '_${{ config.workflow.species.graft }}.txt'
 
   rnaseq_splicing:
     name: Run BeaverRNA splicing analysis
@@ -77,7 +77,7 @@ jobs:
         run: |
           mkdir -p "$(dirname '${{ outputs.success_marker }}')"
           if [ '${{ config.metadata.group_levels }}' -ge 2 ]; then
-            gomats run --root '${{ config.directories.bsmap.main }}' --threads '${{ resources.cores }}' --pdata '${{ config.directories.selfconfig }}/pdata.xlsx' --seqlengthQC '${{ config.directories.qc.main }}' --gtf '${{ inputs.annotation }}' --pdxmode 0
+            matsrun run --root '${{ config.directories.bsmap.main }}' --threads '${{ resources.cores }}' --pdata '${{ config.directories.selfconfig }}/pdata.xlsx' --seqlengthQC '${{ config.directories.qc.main }}' --gtf '${{ inputs.annotation }}' --pdxmode 0
             printf 'RNASplicing_DONE\n' > '${{ outputs.success_marker }}'
           else
             printf 'RNASplicing_NOTRUN\n' > '${{ outputs.success_marker }}'

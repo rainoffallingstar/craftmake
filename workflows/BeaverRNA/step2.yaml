@@ -1,13 +1,13 @@
 name: BeaverRNA step2
 version: 1
 on:
-  xdxtools:
+  otter:
     workflow: BeaverRNA
     phase: step2
     modes: [RNASEQ]
 defaults:
   shell: bash
-  environment: xdxtools-core
+  environment: otter-core
   observability:
     metrics: task
     capture_stdout: true

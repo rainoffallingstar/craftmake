@@ -1,13 +1,13 @@
 name: BeaverRNA step1
 version: 1
 on:
-  xdxtools:
+  otter:
     workflow: BeaverRNA
     phase: step1
     modes: [RNASEQ]
 defaults:
   shell: bash
-  environment: xdxtools-core
+  environment: otter-core
   observability:
     metrics: task
     capture_stdout: true
@@ -22,8 +22,8 @@ jobs:
       read1: "${{ config.output.raw_dir }}/${{ sample.id }}_R1.fastq.gz"
       read2: "${{ config.output.raw_dir }}/${{ sample.id }}_R2.fastq.gz"
     outputs:
-      read1_data: "${{ config.directories.qc.before }}/${{ sample.id }}_R1_fqc/fastqc_data.txt"
-      read2_data: "${{ config.directories.qc.before }}/${{ sample.id }}_R2_fqc/fastqc_data.txt"
+      read1_data: "${{ config.directories.qc.before }}/${{ sample.id }}_R1_fastqcx/fastqc_data.txt"
+      read2_data: "${{ config.directories.qc.before }}/${{ sample.id }}_R2_fastqcx/fastqc_data.txt"
     resources:
       cores: 2
       memory: 4G
@@ -32,8 +32,8 @@ jobs:
       - name: Run FastQC before trimming
         run: |
           mkdir -p "$(dirname '${{ outputs.read1_data }}')" "$(dirname '${{ outputs.read2_data }}')"
-          fqc -q '${{ inputs.read1 }}' -s '${{ config.directories.qc.before }}/${{ sample.id }}_R1_fqc' --no-html
-          fqc -q '${{ inputs.read2 }}' -s '${{ config.directories.qc.before }}/${{ sample.id }}_R2_fqc' --no-html
+          fastqcx -q '${{ inputs.read1 }}' -s '${{ config.directories.qc.before }}/${{ sample.id }}_R1_fastqcx' --no-html
+          fastqcx -q '${{ inputs.read2 }}' -s '${{ config.directories.qc.before }}/${{ sample.id }}_R2_fastqcx' --no-html
 
   trim_reads:
     name: Trim paired RNA-seq reads
@@ -73,8 +73,8 @@ jobs:
       read1: "${{ jobs.trim_reads.outputs.read1 }}"
       read2: "${{ jobs.trim_reads.outputs.read2 }}"
     outputs:
-      read1_data: "${{ config.directories.qc.after }}/${{ sample.id }}_val_1_fqc/fastqc_data.txt"
-      read2_data: "${{ config.directories.qc.after }}/${{ sample.id }}_val_2_fqc/fastqc_data.txt"
+      read1_data: "${{ config.directories.qc.after }}/${{ sample.id }}_val_1_fastqcx/fastqc_data.txt"
+      read2_data: "${{ config.directories.qc.after }}/${{ sample.id }}_val_2_fastqcx/fastqc_data.txt"
     resources:
       cores: 2
       memory: 4G
@@ -83,8 +83,8 @@ jobs:
       - name: Run FastQC after trimming
         run: |
           mkdir -p "$(dirname '${{ outputs.read1_data }}')" "$(dirname '${{ outputs.read2_data }}')"
-          fqc -q '${{ inputs.read1 }}' -s '${{ config.directories.qc.after }}/${{ sample.id }}_val_1_fqc' --no-html
-          fqc -q '${{ inputs.read2 }}' -s '${{ config.directories.qc.after }}/${{ sample.id }}_val_2_fqc' --no-html
+          fastqcx -q '${{ inputs.read1 }}' -s '${{ config.directories.qc.after }}/${{ sample.id }}_val_1_fastqcx' --no-html
+          fastqcx -q '${{ inputs.read2 }}' -s '${{ config.directories.qc.after }}/${{ sample.id }}_val_2_fastqcx' --no-html
 
   step1_checker:
     name: Check BeaverRNA step1

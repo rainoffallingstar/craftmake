@@ -39,7 +39,7 @@ func TestCraftmakeResumeRecoversLocalOrphanAndReusesSuccessfulTask(t *testing.T)
 	writeTextFile(t, workflowPath, `name: Resume integration workflow
 version: 1
 on:
-  xdxtools:
+  otter:
     workflow: BeaverBS
     phase: step1
     modes: [RRBS]

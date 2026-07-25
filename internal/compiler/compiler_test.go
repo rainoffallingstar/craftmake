@@ -88,7 +88,7 @@ func batchWorkflow(allocation, worker spec.ResourceSpec, maxParallel int) *spec.
 	return &spec.WorkflowSpec{
 		Name:     "Batch resource test",
 		Version:  spec.CurrentVersion,
-		On:       spec.TriggerSpec{Xdxtools: spec.XdxtoolsTrigger{Workflow: "Smoke", Phase: "batch", Modes: []string{"RRBS"}}},
+		On:       spec.TriggerSpec{Otter: spec.OtterTrigger{Workflow: "Smoke", Phase: "batch", Modes: []string{"RRBS"}}},
 		Defaults: spec.DefaultsSpec{Shell: "bash"},
 		Jobs: map[string]spec.JobSpec{
 			"process": {

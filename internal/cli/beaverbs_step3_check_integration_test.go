@@ -23,7 +23,7 @@ func TestBeaverBSStep3CheckRunsLocallyAndUsesCache(t *testing.T) {
 	commandEnvironment := append(
 		os.Environ(),
 		"PATH="+toolDirectory+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"METHRIX_CLI="+filepath.Join(toolDirectory, "methrix-cli-override"),
+		"METHX="+filepath.Join(toolDirectory, "methx-override"),
 	)
 	firstRunOutput := runCraftmake(t, binaryPath, commandEnvironment,
 		"run",
@@ -88,7 +88,7 @@ shift 2
 if [ "${1:-}" = "--" ]; then shift; fi
 exec "$@"
 `)
-	writeExecutable(t, filepath.Join(toolDirectory, "methrix-cli-override"), `#!/usr/bin/env bash
+	writeExecutable(t, filepath.Join(toolDirectory, "methx-override"), `#!/usr/bin/env bash
 set -euo pipefail
 command_name="$1"
 shift
@@ -162,10 +162,10 @@ func writeBeaverBSStep3CheckProjectFixture(t *testing.T, projectDirectory string
 			"workflow/bsmap/"+sampleID+"_human.bam",
 			"workflow/trim/"+sampleID+"_R1.fastq.gz_trimming_report.txt",
 			"workflow/trim/"+sampleID+"_R2.fastq.gz_trimming_report.txt",
-			"workflow/fastqc_raw/"+sampleID+"_R1_fqc/fastqc_data.txt",
-			"workflow/fastqc_raw/"+sampleID+"_R2_fqc/fastqc_data.txt",
-			"workflow/fastqc_clean/"+sampleID+"_val_1_fqc/fastqc_data.txt",
-			"workflow/fastqc_clean/"+sampleID+"_val_2_fqc/fastqc_data.txt",
+			"workflow/fastqc_raw/"+sampleID+"_R1_fastqcx/fastqc_data.txt",
+			"workflow/fastqc_raw/"+sampleID+"_R2_fastqcx/fastqc_data.txt",
+			"workflow/fastqc_clean/"+sampleID+"_val_1_fastqcx/fastqc_data.txt",
+			"workflow/fastqc_clean/"+sampleID+"_val_2_fastqcx/fastqc_data.txt",
 			"workflow/QC/qualimap/"+sampleID+"_human/qualimapReport.html",
 			"workflow/bsmap/human/"+sampleID+"_val_1_bismark_bt2_pe.bam",
 			"workflow/bsmap/human/"+sampleID+"_val_1_bismark_bt2_PE_report.txt",

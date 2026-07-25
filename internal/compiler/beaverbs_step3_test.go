@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fallingstar10/craftmake/internal/adapters/xdxtools"
+	"github.com/fallingstar10/craftmake/internal/adapters/otter"
 	"github.com/fallingstar10/craftmake/internal/compiler"
 	"github.com/fallingstar10/craftmake/internal/spec"
 )
@@ -16,7 +16,7 @@ func TestCompileBeaverBSStep3Fixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	context, err := xdxtools.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverbs-step3.yaml"))
+	context, err := otter.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverbs-step3.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,10 +45,10 @@ func TestCompileBeaverBSStep3Fixture(t *testing.T) {
 	if len(task.Steps) != 3 {
 		t.Fatalf("expected sort, pair filtering and extraction steps, got %#v", task.Steps)
 	}
-	if task.Steps[0].Environment != "xdxtools-core" || task.Steps[1].Environment != "" || task.Steps[2].Environment != "xdxtools-core" {
+	if task.Steps[0].Environment != "otter-core" || task.Steps[1].Environment != "" || task.Steps[2].Environment != "otter-core" {
 		t.Fatalf("unexpected step environment boundaries: %#v", task.Steps)
 	}
-	if !strings.Contains(task.Steps[0].Command, "samtools sort") || !strings.Contains(task.Steps[1].Command, "paireads") || !strings.Contains(task.Steps[2].Command, "bismark_methylation_extractor") {
+	if !strings.Contains(task.Steps[0].Command, "samtools sort") || !strings.Contains(task.Steps[1].Command, "pairbam") || !strings.Contains(task.Steps[2].Command, "bismark_methylation_extractor") {
 		t.Fatalf("unexpected step3 commands: %#v", task.Steps)
 	}
 }

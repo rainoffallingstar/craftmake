@@ -13,10 +13,10 @@ type WorkflowSpec struct {
 }
 
 type TriggerSpec struct {
-	Xdxtools XdxtoolsTrigger `yaml:"xdxtools"`
+	Otter OtterTrigger `yaml:"otter"`
 }
 
-type XdxtoolsTrigger struct {
+type OtterTrigger struct {
 	Workflow string   `yaml:"workflow"`
 	Phase    string   `yaml:"phase"`
 	Modes    []string `yaml:"modes"`
@@ -81,8 +81,8 @@ func (workflow WorkflowSpec) Validate() error {
 	if workflow.Name == "" {
 		return fmt.Errorf("workflow name is required")
 	}
-	if workflow.On.Xdxtools.Workflow == "" || workflow.On.Xdxtools.Phase == "" {
-		return fmt.Errorf("on.xdxtools.workflow and on.xdxtools.phase are required")
+	if workflow.On.Otter.Workflow == "" || workflow.On.Otter.Phase == "" {
+		return fmt.Errorf("on.otter.workflow and on.otter.phase are required")
 	}
 	if len(workflow.Jobs) == 0 {
 		return fmt.Errorf("workflow must define at least one job")

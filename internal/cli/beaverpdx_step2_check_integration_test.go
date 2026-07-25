@@ -116,7 +116,7 @@ if [ ! -f "$input_path" ] || [ ! -f "$reference_path" ] || [ "$bisulfite_mode" !
 mkdir -p "$(dirname "$output_path")"
 printf 'fixed from %s with %s\n' "$input_path" "$reference_path" > "$output_path"
 `)
-	writeExecutable(t, filepath.Join(toolDirectory, "xenofilter"), `#!/usr/bin/env bash
+	writeExecutable(t, filepath.Join(toolDirectory, "xenofilx"), `#!/usr/bin/env bash
 set -euo pipefail
 if [ "${1:-}" != "run" ]; then exit 2; fi
 shift

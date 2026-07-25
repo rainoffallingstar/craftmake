@@ -94,7 +94,7 @@ done
 mkdir -p "$(dirname "$output_path")"
 printf 'name-sorted from %s\n' "$input_path" > "$output_path"
 `)
-	writeExecutable(t, filepath.Join(toolDirectory, "paireads"), `#!/usr/bin/env bash
+	writeExecutable(t, filepath.Join(toolDirectory, "pairbam"), `#!/usr/bin/env bash
 set -euo pipefail
 case "$1" in
   *.bam) ;;

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fallingstar10/craftmake/internal/adapters/xdxtools"
+	"github.com/fallingstar10/craftmake/internal/adapters/otter"
 	"github.com/fallingstar10/craftmake/internal/compiler"
 	"github.com/fallingstar10/craftmake/internal/spec"
 )
@@ -16,7 +16,7 @@ func TestCompileBeaverRNASEQPDXStep3CheckFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	context, err := xdxtools.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverrnaseqpdx-step3-check.yaml"))
+	context, err := otter.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverrnaseqpdx-step3-check.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,6 +37,10 @@ func TestCompileBeaverRNASEQPDXStep3CheckFixture(t *testing.T) {
 	}
 	if sampleTask.Inputs["filtered_bam"][0] != filepath.Join("workflow", "bsmap", "Filtered_bams", "sample-a_fixed_human_Filtered.bam") {
 		t.Fatalf("unexpected filtered graft BAM input: %#v", sampleTask.Inputs["filtered_bam"])
+	}
+	if sampleTask.Inputs["fastqc_before_r1"][0] != filepath.Join("workflow", "fastqc_raw", "sample-a_R1_fastqcx", "fastqc_data.txt") ||
+		sampleTask.Inputs["fastqc_after_r2"][0] != filepath.Join("workflow", "fastqc_clean", "sample-a_val_2_fastqcx", "fastqc_data.txt") {
+		t.Fatalf("unexpected RNA-seq PDX Fastqcx artifact inputs: %#v", sampleTask.Inputs)
 	}
 
 	speciesTask := plan.TaskByID["BeaverRNASEQPDX/step3-check/species_qc_artifacts/sample=sample-b/species=mouse"]

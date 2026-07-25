@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fallingstar10/craftmake/internal/adapters/xdxtools"
+	"github.com/fallingstar10/craftmake/internal/adapters/otter"
 	"github.com/fallingstar10/craftmake/internal/compiler"
 	"github.com/fallingstar10/craftmake/internal/spec"
 )
@@ -17,7 +17,7 @@ func TestCompileBeaverBSStep1Fixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	context, err := xdxtools.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverbs-step1.yaml"))
+	context, err := otter.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverbs-step1.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,10 +39,16 @@ func TestCompileBeaverBSStep1Fixture(t *testing.T) {
 	if len(fastqcBeforeSampleA.Dependencies) != 0 {
 		t.Fatalf("fastqc_before should have no dependencies: %#v", fastqcBeforeSampleA.Dependencies)
 	}
+	if fastqcBeforeSampleA.Outputs["read1_data"] != filepath.Join("workflow", "fastqc_raw", "sample-a_R1_fastqcx", "fastqc_data.txt") {
+		t.Fatalf("unexpected pre-trim Fastqcx output %q", fastqcBeforeSampleA.Outputs["read1_data"])
+	}
 
 	fastqcAfterSampleA := plan.TaskByID["BeaverBS/step1/fastqc_after/sample=sample-a"]
 	if fastqcAfterSampleA == nil || !containsTaskID(fastqcAfterSampleA.Dependencies, "BeaverBS/step1/trim_reads/sample=sample-a") {
 		t.Fatalf("fastqc_after should depend on sample-a trimming: %#v", fastqcAfterSampleA)
+	}
+	if fastqcAfterSampleA.Outputs["read2_data"] != filepath.Join("workflow", "fastqc_clean", "sample-a_val_2_fastqcx", "fastqc_data.txt") {
+		t.Fatalf("unexpected post-trim Fastqcx output %q", fastqcAfterSampleA.Outputs["read2_data"])
 	}
 
 	checker := plan.TaskByID["BeaverBS/step1/step1_checker"]

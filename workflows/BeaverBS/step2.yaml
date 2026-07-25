@@ -1,13 +1,13 @@
 name: BeaverBS step2
 version: 1
 on:
-  xdxtools:
+  otter:
     workflow: BeaverBS
     phase: step2
     modes: [RRBS, WGBS, BSSEQ]
 defaults:
   shell: bash
-  environment: xdxtools-core
+  environment: otter-core
   observability:
     metrics: task
     capture_stdout: true

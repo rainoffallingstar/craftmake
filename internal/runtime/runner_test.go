@@ -184,7 +184,7 @@ func TestBuildStepEnvironmentIsolatesManagedEnvironmentFromHostJava(t *testing.T
 	}
 	commandEnvironment := buildStepEnvironment(
 		inheritedEnvironment,
-		"xdxtools-core",
+		"otter-core",
 		map[string]string{"CRAFTMAKE_TEMP": "/runtime/temp"},
 		map[string]string{"JAVA_HOME": "/workflow/java", "PRESERVED_VALUE": "workflow"},
 	)
@@ -271,7 +271,7 @@ exec "$@"
 			Index:       1,
 			Name:        "inspect environment",
 			Shell:       "bash",
-			Environment: "xdxtools-core",
+			Environment: "otter-core",
 			Command:     "printf 'clean environment\\n'",
 		}},
 	}

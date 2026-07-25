@@ -12,9 +12,9 @@ import (
 
 func TestBeaverBSStep1WithRealTools(t *testing.T) {
 	if os.Getenv("CRAFTMAKE_REAL_TOOLS_SMOKE") != "1" {
-		t.Skip("set CRAFTMAKE_REAL_TOOLS_SMOKE=1 to run the real fqc and trim_galore smoke test")
+		t.Skip("set CRAFTMAKE_REAL_TOOLS_SMOKE=1 to run the real fastqcx and trim_galore smoke test")
 	}
-	for _, executableName := range []string{"enva", "fqc", "trim_galore"} {
+	for _, executableName := range []string{"enva", "fastqcx", "trim_galore"} {
 		if _, err := exec.LookPath(executableName); err != nil {
 			t.Skipf("required real tool %q is unavailable: %v", executableName, err)
 		}
@@ -50,14 +50,14 @@ func TestBeaverBSStep1WithRealTools(t *testing.T) {
 	}
 
 	for _, expectedOutput := range []string{
-		"workflow/fastqc_raw/smoke_R1_fqc/fastqc_data.txt",
-		"workflow/fastqc_raw/smoke_R2_fqc/fastqc_data.txt",
+		"workflow/fastqc_raw/smoke_R1_fastqcx/fastqc_data.txt",
+		"workflow/fastqc_raw/smoke_R2_fastqcx/fastqc_data.txt",
 		"workflow/trim/smoke_val_1.fq.gz",
 		"workflow/trim/smoke_val_2.fq.gz",
 		"workflow/trim/smoke_R1.fastq.gz_trimming_report.txt",
 		"workflow/trim/smoke_R2.fastq.gz_trimming_report.txt",
-		"workflow/fastqc_clean/smoke_val_1_fqc/fastqc_data.txt",
-		"workflow/fastqc_clean/smoke_val_2_fqc/fastqc_data.txt",
+		"workflow/fastqc_clean/smoke_val_1_fastqcx/fastqc_data.txt",
+		"workflow/fastqc_clean/smoke_val_2_fastqcx/fastqc_data.txt",
 		"workflow/log/step1_success.txt",
 	} {
 		if _, err := os.Stat(filepath.Join(projectDirectory, expectedOutput)); err != nil {
