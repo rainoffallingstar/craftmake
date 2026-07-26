@@ -700,9 +700,9 @@ func (stateStore *Store) RunSummary(ctx context.Context, runID string) (Run, map
 	var resumedFromRunID sql.NullString
 	var startedAt string
 	err := stateStore.database.QueryRowContext(ctx, `
-		SELECT run_id, workflow, phase, config_path, workflow_path, backend, craftmake_version, resumed_from_run_id, status, started_at, finished_at
+		SELECT run_id, workflow, phase, config_path, config_digest, workflow_path, workflow_digest, backend, craftmake_version, resumed_from_run_id, status, started_at, finished_at
 		FROM runs WHERE run_id = ?
-	`, runID).Scan(&run.ID, &run.Workflow, &run.Phase, &run.ConfigPath, &run.WorkflowPath, &run.Backend, &run.CraftmakeVersion, &resumedFromRunID, &run.Status, &startedAt, &finished)
+	`, runID).Scan(&run.ID, &run.Workflow, &run.Phase, &run.ConfigPath, &run.ConfigDigest, &run.WorkflowPath, &run.WorkflowDigest, &run.Backend, &run.CraftmakeVersion, &resumedFromRunID, &run.Status, &startedAt, &finished)
 	if err != nil {
 		return run, nil, fmt.Errorf("load run summary: %w", err)
 	}

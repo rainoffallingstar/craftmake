@@ -16,7 +16,7 @@ func TestCompileBeaverPDXStep2CheckFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	context, err := otter.Load(filepath.Join(repositoryRoot, "fixtures", "BeaverPDX", "step2-check.yaml"))
+	context, err := otter.LoadLegacy(filepath.Join(repositoryRoot, "fixtures", "BeaverPDX", "step2-check.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,7 +9,7 @@ import (
 )
 
 func TestLoadBeaverBSStep1Fixture(t *testing.T) {
-	context, err := Load(repositoryPath(t, "testdata", "configs", "beaverbs-step1.yaml"))
+	context, err := LoadLegacy(repositoryPath(t, "testdata", "configs", "beaverbs-step1.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestLoadBeaverBSStep1Fixture(t *testing.T) {
 }
 
 func TestLoadBeaverPDXReferences(t *testing.T) {
-	context, err := Load(repositoryPath(t, "fixtures", "BeaverPDX", "step2.yaml"))
+	context, err := LoadLegacy(repositoryPath(t, "fixtures", "BeaverPDX", "step2.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ reference:
 	if err := os.WriteFile(configurationPath, []byte(configuration), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	context, err := Load(configurationPath)
+	context, err := LoadLegacy(configurationPath)
 	if err != nil {
 		t.Fatal(err)
 	}

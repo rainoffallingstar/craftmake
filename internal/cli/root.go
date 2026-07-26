@@ -23,6 +23,7 @@ import (
 	"github.com/fallingstar10/craftmake/internal/scheduler"
 	"github.com/fallingstar10/craftmake/internal/spec"
 	"github.com/fallingstar10/craftmake/internal/store"
+	"github.com/fallingstar10/craftmake/pkg/protocol"
 )
 
 type BuildInfo struct {
@@ -32,13 +33,16 @@ type BuildInfo struct {
 }
 
 type commonOptions struct {
-	workflowPath string
-	configPath   string
-	projectDir   string
-	stateDir     string
-	catalogDir   string
-	phase        string
-	format       string
+	workflowPath    string
+	configPath      string
+	projectDir      string
+	stateDir        string
+	catalogDir      string
+	phase           string
+	format          string
+	resolvedBackend string
+	resolvedRunID   string
+	legacyConfig    bool
 }
 
 func NewRootCommand(buildInfo BuildInfo) *cobra.Command {
@@ -70,41 +74,56 @@ func noArguments(command *cobra.Command, arguments []string) error {
 }
 
 func newValidateCommand() *cobra.Command {
-	options := commonOptions{}
+	options := commonOptions{format: "text"}
 	command := &cobra.Command{Use: "validate", Short: "Validate workflow and configuration", RunE: func(command *cobra.Command, arguments []string) error {
 		plan, err := loadPlan(&options)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(command.OutOrStdout(), "valid: %s %s (%d tasks, %d submissions)\n", plan.Workflow, plan.Phase, len(plan.Tasks), len(plan.Submissions))
-		return nil
+		payload, err := json.Marshal(protocol.ValidatePayload{
+			Workflow:        plan.Workflow,
+			Phase:           plan.Phase,
+			TaskCount:       len(plan.Tasks),
+			SubmissionCount: len(plan.Submissions),
+		})
+		if err != nil {
+			return internalFailureError(err)
+		}
+		envelope := protocol.NewCommandEnvelope("validate", true, options.resolvedRunID, "", "", payload)
+		return writeCommandOutput(command, options.format, envelope, func() error {
+			fmt.Fprintf(command.OutOrStdout(), "valid: %s %s (%d tasks, %d submissions)\n", plan.Workflow, plan.Phase, len(plan.Tasks), len(plan.Submissions))
+			return nil
+		})
 	}}
 	addPlanFlags(command, &options)
+	command.Flags().StringVar(&options.format, "format", "text", "Output format (text/json/jsonl)")
 	return command
 }
 
 func newPlanCommand() *cobra.Command {
-	options := commonOptions{format: "table"}
+	options := commonOptions{format: "text"}
 	command := &cobra.Command{Use: "plan", Short: "Compile and display the task DAG", RunE: func(command *cobra.Command, arguments []string) error {
 		plan, err := loadPlan(&options)
 		if err != nil {
 			return err
 		}
-		if options.format == "json" {
-			encoder := json.NewEncoder(command.OutOrStdout())
-			encoder.SetIndent("", "  ")
-			return encoder.Encode(plan)
+		payload, err := json.Marshal(plan)
+		if err != nil {
+			return internalFailureError(err)
 		}
-		printPlan(command, plan)
-		return nil
+		envelope := protocol.NewCommandEnvelope("plan", true, options.resolvedRunID, "", "", payload)
+		return writeCommandOutput(command, options.format, envelope, func() error {
+			printPlan(command, plan)
+			return nil
+		})
 	}}
 	addPlanFlags(command, &options)
-	command.Flags().StringVar(&options.format, "format", "table", "Output format (table/json)")
+	command.Flags().StringVar(&options.format, "format", "text", "Output format (text/json/jsonl)")
 	return command
 }
 
 func newRunCommand(buildInfo BuildInfo) *cobra.Command {
-	options := commonOptions{}
+	options := commonOptions{format: "text"}
 	var backendName string
 	var slurmPartition string
 	var workers int
@@ -123,9 +142,30 @@ func newRunCommand(buildInfo BuildInfo) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if backendName == "" {
+			backendName = options.resolvedBackend
+		} else if !options.legacyConfig && backendName != options.resolvedBackend {
+			return configurationError(fmt.Errorf("--backend cannot override immutable run backend %q", options.resolvedBackend))
+		}
+		if runID == "" {
+			runID = options.resolvedRunID
+		} else if !options.legacyConfig && runID != options.resolvedRunID {
+			return configurationError(fmt.Errorf("--run-id cannot override immutable run id %q", options.resolvedRunID))
+		}
 		if dryRun {
-			printPlan(command, plan)
-			return nil
+			planData, marshalErr := json.Marshal(plan)
+			if marshalErr != nil {
+				return internalFailureError(marshalErr)
+			}
+			payload, marshalErr := json.Marshal(protocol.RunPayload{Backend: backendName, Status: "planned", DryRun: true, Plan: planData})
+			if marshalErr != nil {
+				return internalFailureError(marshalErr)
+			}
+			envelope := protocol.NewCommandEnvelope("run", true, runID, "", "", payload)
+			return writeCommandOutput(command, options.format, envelope, func() error {
+				printPlan(command, plan)
+				return nil
+			})
 		}
 		effectiveWorkers, workerErr := resolveEffectiveWorkers(workers, maxParallel)
 		if workerErr != nil {
@@ -164,7 +204,11 @@ func newRunCommand(buildInfo BuildInfo) *cobra.Command {
 			return stateFailureError(err)
 		}
 		defer stateStore.Close()
-		taskScheduler, err := scheduler.New(plan, stateStore, scheduler.Options{ProjectDirectory: projectDirectory, StateDirectory: stateDirectory, ConfigPath: options.configPath, WorkflowPath: options.workflowPath, Backend: selectedBackend, MaxParallel: effectiveWorkers, MaxCores: effectiveMaxCores, MaxMemoryBytes: memoryBytes, Force: force, Version: buildInfo.Version, RunID: runID})
+		digests, err := calculatePlanDigests(options.configPath, options.workflowPath)
+		if err != nil {
+			return configurationError(err)
+		}
+		taskScheduler, err := scheduler.New(plan, stateStore, scheduler.Options{ProjectDirectory: projectDirectory, StateDirectory: stateDirectory, ConfigPath: options.configPath, ConfigDigest: digests.Config, WorkflowPath: options.workflowPath, WorkflowDigest: digests.Workflow, Backend: selectedBackend, MaxParallel: effectiveWorkers, MaxCores: effectiveMaxCores, MaxMemoryBytes: memoryBytes, Force: force, Version: buildInfo.Version, RunID: runID})
 		if err != nil {
 			return backendFailureError(err)
 		}
@@ -172,17 +216,31 @@ func newRunCommand(buildInfo BuildInfo) *cobra.Command {
 		for _, logErr := range taskScheduler.ControllerLogErrors() {
 			fmt.Fprintf(command.ErrOrStderr(), "warning: controller log: %v\n", logErr)
 		}
-		fmt.Fprintf(
-			command.OutOrStdout(),
-			"run_id: %s\nstate: %s\ncontroller_log: %s\n",
-			actualRunID,
-			databasePath,
-			taskScheduler.ControllerLogPath(),
-		)
+		status := "succeeded"
+		if runErr != nil {
+			status = "failed"
+		}
+		payload, marshalErr := json.Marshal(protocol.RunPayload{Backend: backendName, Status: status})
+		if marshalErr != nil {
+			return internalFailureError(marshalErr)
+		}
+		envelope := protocol.NewCommandEnvelope("run", runErr == nil, actualRunID, databasePath, taskScheduler.ControllerLogPath(), payload)
+		if outputErr := writeCommandOutput(command, options.format, envelope, func() error {
+			fmt.Fprintf(
+				command.OutOrStdout(),
+				"run_id: %s\nstate: %s\ncontroller_log: %s\n",
+				actualRunID,
+				databasePath,
+				taskScheduler.ControllerLogPath(),
+			)
+			return nil
+		}); outputErr != nil {
+			return outputErr
+		}
 		return taskFailureError(runErr)
 	}}
 	addPlanFlags(command, &options)
-	command.Flags().StringVar(&backendName, "backend", "local", "Execution backend (local/slurm)")
+	command.Flags().StringVar(&backendName, "backend", "", "Override the resolved execution backend (local/slurm)")
 	command.Flags().StringVar(&slurmPartition, "partition", os.Getenv("CRAFTMAKE_SLURM_PARTITION"), "Override the Slurm partition (or set CRAFTMAKE_SLURM_PARTITION)")
 	command.Flags().IntVar(&workers, "workers", 0, "Maximum active submissions; zero uses --max-parallel")
 	command.Flags().IntVar(&maxParallel, "max-parallel", runtime.NumCPU(), "Maximum active submissions when --workers is zero")
@@ -194,7 +252,8 @@ func newRunCommand(buildInfo BuildInfo) *cobra.Command {
 	command.Flags().DurationVar(&slurmPendingTimeout, "slurm-pending-timeout", 0, "Cancel a Slurm job after this continuous pending duration, 0 disables")
 	command.Flags().BoolVar(&force, "force", false, "Ignore fingerprint cache")
 	command.Flags().BoolVar(&dryRun, "dry-run", false, "Compile and display the plan without executing")
-	command.Flags().StringVar(&runID, "run-id", "", "Optional run identifier")
+	command.Flags().StringVar(&runID, "run-id", "", "Override the resolved run identifier")
+	command.Flags().StringVar(&options.format, "format", "text", "Output format (text/json/jsonl)")
 	return command
 }
 
@@ -202,6 +261,7 @@ func newStatusCommand() *cobra.Command {
 	var statePath string
 	var runID string
 	var verbose bool
+	var format string
 	command := &cobra.Command{Use: "status", Short: "Show workflow run status", RunE: func(command *cobra.Command, arguments []string) error {
 		stateStore, err := store.Open(command.Context(), statePath)
 		if err != nil {
@@ -218,15 +278,16 @@ func newStatusCommand() *cobra.Command {
 		if err != nil {
 			return stateFailureError(err)
 		}
-		fmt.Fprintf(command.OutOrStdout(), "run: %s\nworkflow: %s\nphase: %s\nbackend: %s\nstatus: %s\n", run.ID, run.Workflow, run.Phase, run.Backend, run.Status)
 		statuses := make([]string, 0, len(counts))
 		for status := range counts {
 			statuses = append(statuses, status)
 		}
 		sort.Strings(statuses)
+		statusCounts := make([]protocol.StatusCount, 0, len(statuses))
 		for _, status := range statuses {
-			fmt.Fprintf(command.OutOrStdout(), "%s: %d\n", status, counts[status])
+			statusCounts = append(statusCounts, protocol.StatusCount{Status: status, Count: counts[status]})
 		}
+		cacheDecisions := make([]protocol.CacheDecisionPayload, 0)
 		if verbose {
 			rows, queryErr := stateStore.QueryRows(command.Context(), `
 				SELECT task_id, status, COALESCE(cache_decision, ''), COALESCE(cache_reason_code, ''), COALESCE(cache_reason_detail, '')
@@ -238,41 +299,55 @@ func newStatusCommand() *cobra.Command {
 				return stateFailureError(queryErr)
 			}
 			defer rows.Close()
-			fmt.Fprintln(command.OutOrStdout(), "cache_decisions:")
 			for rows.Next() {
-				var taskID string
-				var taskStatus string
-				var cacheDecision string
-				var reasonCode string
-				var reasonDetail string
-				if err := rows.Scan(&taskID, &taskStatus, &cacheDecision, &reasonCode, &reasonDetail); err != nil {
+				var decision protocol.CacheDecisionPayload
+				if err := rows.Scan(&decision.TaskID, &decision.Status, &decision.Decision, &decision.ReasonCode, &decision.ReasonDetail); err != nil {
 					return stateFailureError(err)
 				}
-				fmt.Fprintf(
-					command.OutOrStdout(),
-					"%s\tstatus=%s\tdecision=%s\treason=%s\tdetail=%s\n",
-					taskID,
-					taskStatus,
-					cacheDecision,
-					reasonCode,
-					reasonDetail,
-				)
+				cacheDecisions = append(cacheDecisions, decision)
 			}
 			if err := rows.Err(); err != nil {
 				return stateFailureError(err)
 			}
 		}
-		return nil
+		payload, err := json.Marshal(protocol.StatusPayload{
+			Workflow:       run.Workflow,
+			Phase:          run.Phase,
+			Backend:        run.Backend,
+			Status:         run.Status,
+			Counts:         statusCounts,
+			CacheDecisions: cacheDecisions,
+		})
+		if err != nil {
+			return internalFailureError(err)
+		}
+		controllerLogPath := controllerlog.DefaultPath(filepath.Dir(statePath), runID)
+		envelope := protocol.NewCommandEnvelope("status", true, runID, statePath, controllerLogPath, payload)
+		return writeCommandOutput(command, format, envelope, func() error {
+			fmt.Fprintf(command.OutOrStdout(), "run: %s\nworkflow: %s\nphase: %s\nbackend: %s\nstatus: %s\n", run.ID, run.Workflow, run.Phase, run.Backend, run.Status)
+			for _, count := range statusCounts {
+				fmt.Fprintf(command.OutOrStdout(), "%s: %d\n", count.Status, count.Count)
+			}
+			if verbose {
+				fmt.Fprintln(command.OutOrStdout(), "cache_decisions:")
+				for _, decision := range cacheDecisions {
+					fmt.Fprintf(command.OutOrStdout(), "%s\tstatus=%s\tdecision=%s\treason=%s\tdetail=%s\n", decision.TaskID, decision.Status, decision.Decision, decision.ReasonCode, decision.ReasonDetail)
+				}
+			}
+			return nil
+		})
 	}}
 	command.Flags().StringVar(&statePath, "state", "workflow/.craftmake/state.sqlite", "State database path")
 	command.Flags().StringVar(&runID, "run", "latest", "Run identifier")
 	command.Flags().BoolVar(&verbose, "verbose", false, "Show per-task cache decisions and reasons")
+	command.Flags().StringVar(&format, "format", "text", "Output format (text/json/jsonl)")
 	return command
 }
 
 func newCancelCommand() *cobra.Command {
 	var statePath string
 	var runID string
+	var format string
 	command := &cobra.Command{Use: "cancel", Short: "Cancel a running workflow", RunE: func(command *cobra.Command, arguments []string) error {
 		stateStore, err := store.Open(command.Context(), statePath)
 		if err != nil {
@@ -325,11 +400,15 @@ func newCancelCommand() *cobra.Command {
 			return stateFailureError(err)
 		}
 		var cancellationErrors []string
+		failures := make([]protocol.CancelFailurePayload, 0)
+		cancelledCount := 0
 		for _, submission := range submissions {
 			metadata := map[string]any{}
 			if len(submission.RawMetadata) > 0 {
 				if err := json.Unmarshal(submission.RawMetadata, &metadata); err != nil {
-					cancellationErrors = append(cancellationErrors, fmt.Sprintf("submission %s metadata: %v", submission.ID, err))
+					message := fmt.Sprintf("submission %s metadata: %v", submission.ID, err)
+					cancellationErrors = append(cancellationErrors, message)
+					failures = append(failures, protocol.CancelFailurePayload{SubmissionID: submission.ID, Message: message})
 					structuredLogger.Log(command.Context(), controllerlog.Event{
 						Level:        "error",
 						Name:         "submission.cancellation_finished",
@@ -347,7 +426,11 @@ func newCancelCommand() *cobra.Command {
 			submissionStatus := "cancelled"
 			if cancellationErr != nil {
 				submissionStatus = "failed"
-				cancellationErrors = append(cancellationErrors, fmt.Sprintf("submission %s: %v", submission.ID, cancellationErr))
+				message := fmt.Sprintf("submission %s: %v", submission.ID, cancellationErr)
+				cancellationErrors = append(cancellationErrors, message)
+				failures = append(failures, protocol.CancelFailurePayload{SubmissionID: submission.ID, Message: message})
+			} else {
+				cancelledCount++
 			}
 			structuredLogger.Log(command.Context(), controllerlog.Event{
 				Level:        controllerEventLevelForStatus(submissionStatus),
@@ -377,14 +460,33 @@ func newCancelCommand() *cobra.Command {
 		})
 		_ = structuredLogger.Close()
 		reportControllerLogErrors(command, structuredLogger)
+		payload, marshalErr := json.Marshal(protocol.CancelPayload{
+			SubmissionCount: len(submissions),
+			CancelledCount:  cancelledCount,
+			FailureCount:    len(failures),
+			Partial:         cancellationErr != nil,
+			Failures:        failures,
+		})
+		if marshalErr != nil {
+			return internalFailureError(marshalErr)
+		}
+		envelope := protocol.NewCommandEnvelope("cancel", cancellationErr == nil, runID, statePath, controllerLogPath, payload)
+		if outputErr := writeCommandOutput(command, format, envelope, func() error {
+			if cancellationErr == nil {
+				fmt.Fprintf(command.OutOrStdout(), "cancelled: %s\ncontroller_log: %s\n", runID, controllerLogPath)
+			}
+			return nil
+		}); outputErr != nil {
+			return outputErr
+		}
 		if cancellationErr != nil {
 			return backendFailureError(cancellationErr)
 		}
-		fmt.Fprintf(command.OutOrStdout(), "cancelled: %s\ncontroller_log: %s\n", runID, controllerLogPath)
 		return nil
 	}}
 	command.Flags().StringVar(&statePath, "state", "workflow/.craftmake/state.sqlite", "State database path")
 	command.Flags().StringVar(&runID, "run", "latest", "Run identifier")
+	command.Flags().StringVar(&format, "format", "text", "Output format (text/json/jsonl)")
 	return command
 }
 
@@ -499,8 +601,8 @@ func newReportCommand() *cobra.Command {
 	var format string
 	var refreshMetrics bool
 	command := &cobra.Command{Use: "report", Short: "Export run metrics and timings", RunE: func(command *cobra.Command, arguments []string) error {
-		if format != "csv" {
-			return usageError("unsupported report format %q", format)
+		if format == "csv" {
+			format = "text"
 		}
 		stateStore, err := store.Open(command.Context(), statePath)
 		if err != nil {
@@ -513,6 +615,7 @@ func newReportCommand() *cobra.Command {
 				return stateFailureError(err)
 			}
 		}
+		var metricsRefresh *protocol.MetricsRefreshPayload
 		if refreshMetrics {
 			refreshSummary, refreshErr := report.RefreshMetrics(command.Context(), stateStore, runID, slurm.New())
 			if refreshErr != nil {
@@ -521,13 +624,11 @@ func newReportCommand() *cobra.Command {
 			for _, refreshFailure := range refreshSummary.Failures {
 				fmt.Fprintf(command.ErrOrStderr(), "warning: metrics refresh for attempt %s failed: %v\n", refreshFailure.AttemptID, refreshFailure.Err)
 			}
-			fmt.Fprintf(
-				command.OutOrStdout(),
-				"metrics_refresh_candidates: %d\nmetrics_refreshed: %d\nmetrics_unavailable: %d\n",
-				refreshSummary.Candidates,
-				refreshSummary.Refreshed,
-				len(refreshSummary.Failures),
-			)
+			metricsRefresh = &protocol.MetricsRefreshPayload{
+				Candidates:  refreshSummary.Candidates,
+				Refreshed:   refreshSummary.Refreshed,
+				Unavailable: len(refreshSummary.Failures),
+			}
 		}
 		if outputDirectory == "" {
 			outputDirectory = filepath.Join(filepath.Dir(statePath), "runs", runID, "reports")
@@ -535,13 +636,23 @@ func newReportCommand() *cobra.Command {
 		if err := report.ExportCSV(command.Context(), stateStore, runID, outputDirectory); err != nil {
 			return stateFailureError(err)
 		}
-		fmt.Fprintln(command.OutOrStdout(), outputDirectory)
-		return nil
+		payload, err := json.Marshal(protocol.ReportPayload{OutputDirectory: outputDirectory, ReportFormat: "csv", MetricsRefresh: metricsRefresh})
+		if err != nil {
+			return internalFailureError(err)
+		}
+		envelope := protocol.NewCommandEnvelope("report", true, runID, statePath, controllerlog.DefaultPath(filepath.Dir(statePath), runID), payload)
+		return writeCommandOutput(command, format, envelope, func() error {
+			if metricsRefresh != nil {
+				fmt.Fprintf(command.OutOrStdout(), "metrics_refresh_candidates: %d\nmetrics_refreshed: %d\nmetrics_unavailable: %d\n", metricsRefresh.Candidates, metricsRefresh.Refreshed, metricsRefresh.Unavailable)
+			}
+			fmt.Fprintln(command.OutOrStdout(), outputDirectory)
+			return nil
+		})
 	}}
 	command.Flags().StringVar(&statePath, "state", "workflow/.craftmake/state.sqlite", "State database path")
 	command.Flags().StringVar(&runID, "run", "latest", "Run identifier")
 	command.Flags().StringVar(&outputDirectory, "output", "", "Report output directory")
-	command.Flags().StringVar(&format, "format", "csv", "Report format")
+	command.Flags().StringVar(&format, "format", "text", "Output format (text/json/jsonl); csv remains a text compatibility alias")
 	command.Flags().BoolVar(&refreshMetrics, "refresh-metrics", false, "Retry unavailable Slurm accounting metrics before exporting")
 	return command
 }
@@ -550,6 +661,7 @@ func newLogsCommand() *cobra.Command {
 	var statePath string
 	var runID string
 	var failedOnly bool
+	var format string
 	command := &cobra.Command{Use: "logs", Short: "List task log paths", RunE: func(command *cobra.Command, arguments []string) error {
 		stateStore, err := store.Open(command.Context(), statePath)
 		if err != nil {
@@ -562,13 +674,9 @@ func newLogsCommand() *cobra.Command {
 				return stateFailureError(err)
 			}
 		}
+		controllerLogPath := controllerlog.DefaultPath(filepath.Dir(statePath), runID)
+		logs := []protocol.LogPayload{{Kind: "controller", Path: controllerLogPath}}
 		query := `SELECT task_id, status, result_path FROM task_attempts WHERE run_id=?`
-		fmt.Fprintf(
-			command.OutOrStdout(),
-			"controller\t%s\t%s\n",
-			runID,
-			controllerlog.DefaultPath(filepath.Dir(statePath), runID),
-		)
 		if failedOnly {
 			query += ` AND status='failed'`
 		}
@@ -583,13 +691,28 @@ func newLogsCommand() *cobra.Command {
 			if err := rows.Scan(&taskID, &status, &resultPath); err != nil {
 				return stateFailureError(err)
 			}
-			fmt.Fprintf(command.OutOrStdout(), "%s\t%s\t%s\n", status, taskID, filepath.Dir(resultPath))
+			logs = append(logs, protocol.LogPayload{Kind: "task", TaskID: taskID, Status: status, Path: filepath.Dir(resultPath)})
 		}
-		return stateFailureError(rows.Err())
+		if err := rows.Err(); err != nil {
+			return stateFailureError(err)
+		}
+		payload, err := json.Marshal(protocol.LogsPayload{Logs: logs})
+		if err != nil {
+			return internalFailureError(err)
+		}
+		envelope := protocol.NewCommandEnvelope("logs", true, runID, statePath, controllerLogPath, payload)
+		return writeCommandOutput(command, format, envelope, func() error {
+			fmt.Fprintf(command.OutOrStdout(), "controller\t%s\t%s\n", runID, controllerLogPath)
+			for _, log := range logs[1:] {
+				fmt.Fprintf(command.OutOrStdout(), "%s\t%s\t%s\n", log.Status, log.TaskID, log.Path)
+			}
+			return nil
+		})
 	}}
 	command.Flags().StringVar(&statePath, "state", "workflow/.craftmake/state.sqlite", "State database path")
 	command.Flags().StringVar(&runID, "run", "latest", "Run identifier")
 	command.Flags().BoolVar(&failedOnly, "failed", false, "Show only failed task logs")
+	command.Flags().StringVar(&format, "format", "text", "Output format (text/json/jsonl)")
 	return command
 }
 
@@ -631,6 +754,8 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 	var slurmSubmitBackoff time.Duration
 	var slurmSubmitMaximumBackoff time.Duration
 	var slurmPendingTimeout time.Duration
+	var format string
+	var legacyConfig bool
 	command := &cobra.Command{Use: "resume", Short: "Recover and resume a prior run using its workflow, config, and backend", RunE: func(command *cobra.Command, arguments []string) error {
 		stateStore, err := store.Open(command.Context(), statePath)
 		if err != nil {
@@ -646,6 +771,10 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 		run, _, err := stateStore.RunSummary(command.Context(), runID)
 		if err != nil {
 			return stateFailureError(err)
+		}
+		digests, err := validatePersistedRunDigests(run)
+		if err != nil {
+			return configurationError(err)
 		}
 		selectedBackend, err := backendForNameWithPartition(run.Backend, slurmPartition)
 		if err != nil {
@@ -669,6 +798,7 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 			}
 		}
 		projectDirectory := filepath.Dir(run.ConfigPath)
+		var recoveryPayload *protocol.RecoveryPayload
 		if run.Status == "running" {
 			recoveryLogPath := controllerlog.DefaultPath(filepath.Dir(statePath), runID)
 			recoveryLogger, recoveryLogOpenErr := controllerlog.Open(recoveryLogPath, stateStore)
@@ -684,17 +814,15 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 			if recoveryErr != nil {
 				return backendFailureError(fmt.Errorf("recover source run %s: %w", runID, recoveryErr))
 			}
-			fmt.Fprintf(
-				command.OutOrStdout(),
-				"recovered_run: %s\nrecovered_status: %s\nrecovered_succeeded: %d\nrecovered_failed: %d\nrecovered_cancelled: %d\nrecovered_interrupted: %d\nrecovered_controller_log: %s\n",
-				runID,
-				recoverySummary.FinalStatus,
-				recoverySummary.Succeeded,
-				recoverySummary.Failed,
-				recoverySummary.Cancelled,
-				recoverySummary.Interrupted,
-				recoveryLogPath,
-			)
+			recoveryPayload = &protocol.RecoveryPayload{
+				RunID:         runID,
+				FinalStatus:   recoverySummary.FinalStatus,
+				Succeeded:     recoverySummary.Succeeded,
+				Failed:        recoverySummary.Failed,
+				Cancelled:     recoverySummary.Cancelled,
+				Interrupted:   recoverySummary.Interrupted,
+				ControllerLog: recoveryLogPath,
+			}
 		}
 
 		options := commonOptions{
@@ -702,6 +830,7 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 			configPath:   run.ConfigPath,
 			projectDir:   projectDirectory,
 			stateDir:     filepath.Dir(statePath),
+			legacyConfig: legacyConfig,
 		}
 		plan, err := loadPlan(&options)
 		if err != nil {
@@ -715,7 +844,9 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 			ProjectDirectory: projectDirectory,
 			StateDirectory:   options.stateDir,
 			ConfigPath:       options.configPath,
+			ConfigDigest:     digests.Config,
 			WorkflowPath:     options.workflowPath,
+			WorkflowDigest:   digests.Workflow,
 			Backend:          selectedBackend,
 			MaxParallel:      effectiveWorkers,
 			MaxCores:         effectiveMaxCores,
@@ -730,14 +861,34 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 		for _, logErr := range taskScheduler.ControllerLogErrors() {
 			fmt.Fprintf(command.ErrOrStderr(), "warning: controller log: %v\n", logErr)
 		}
-		fmt.Fprintf(
-			command.OutOrStdout(),
-			"resumed_from: %s\nrun_id: %s\nbackend: %s\ncontroller_log: %s\n",
-			runID,
-			newRunID,
-			run.Backend,
-			taskScheduler.ControllerLogPath(),
-		)
+		status := "succeeded"
+		if runErr != nil {
+			status = "failed"
+		}
+		payload, marshalErr := json.Marshal(protocol.ResumePayload{ResumedFrom: runID, Backend: run.Backend, Status: status, Recovery: recoveryPayload})
+		if marshalErr != nil {
+			return internalFailureError(marshalErr)
+		}
+		envelope := protocol.NewCommandEnvelope("resume", runErr == nil, newRunID, statePath, taskScheduler.ControllerLogPath(), payload)
+		if outputErr := writeCommandOutput(command, format, envelope, func() error {
+			if recoveryPayload != nil {
+				fmt.Fprintf(
+					command.OutOrStdout(),
+					"recovered_run: %s\nrecovered_status: %s\nrecovered_succeeded: %d\nrecovered_failed: %d\nrecovered_cancelled: %d\nrecovered_interrupted: %d\nrecovered_controller_log: %s\n",
+					recoveryPayload.RunID,
+					recoveryPayload.FinalStatus,
+					recoveryPayload.Succeeded,
+					recoveryPayload.Failed,
+					recoveryPayload.Cancelled,
+					recoveryPayload.Interrupted,
+					recoveryPayload.ControllerLog,
+				)
+			}
+			fmt.Fprintf(command.OutOrStdout(), "resumed_from: %s\nrun_id: %s\nbackend: %s\ncontroller_log: %s\n", runID, newRunID, run.Backend, taskScheduler.ControllerLogPath())
+			return nil
+		}); outputErr != nil {
+			return outputErr
+		}
 		return taskFailureError(runErr)
 	}}
 	command.Flags().StringVar(&statePath, "state", "workflow/.craftmake/state.sqlite", "State database path")
@@ -751,6 +902,9 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 	command.Flags().DurationVar(&slurmSubmitBackoff, "slurm-submit-backoff", time.Second, "Initial delay after a transient sbatch failure")
 	command.Flags().DurationVar(&slurmSubmitMaximumBackoff, "slurm-submit-max-backoff", 30*time.Second, "Maximum delay between transient sbatch retries")
 	command.Flags().DurationVar(&slurmPendingTimeout, "slurm-pending-timeout", 0, "Cancel a Slurm job after this continuous pending duration, 0 disables")
+	command.Flags().StringVar(&format, "format", "text", "Output format (text/json/jsonl)")
+	command.Flags().BoolVar(&legacyConfig, "legacy-config", false, "Load the stored configuration through the legacy compatibility adapter")
+	_ = command.Flags().MarkHidden("legacy-config")
 	return command
 }
 
@@ -771,11 +925,13 @@ func newTaskRunnerCommand() *cobra.Command {
 
 func addPlanFlags(command *cobra.Command, options *commonOptions) {
 	command.Flags().StringVarP(&options.workflowPath, "workflow", "w", "", "Workflow YAML path; overrides automatic catalog routing")
-	command.Flags().StringVarP(&options.configPath, "config", "c", "", "otter config YAML path")
+	command.Flags().StringVarP(&options.configPath, "config", "c", "", "otter run-v1 YAML path")
 	command.Flags().StringVar(&options.phase, "phase", "", "Workflow phase to resolve automatically, for example step2-check")
 	command.Flags().StringVar(&options.catalogDir, "catalog", "", "Workflow catalog root; defaults to CRAFTMAKE_WORKFLOW_CATALOG or installed workflows")
 	command.Flags().StringVar(&options.projectDir, "project-dir", "", "Project working directory")
 	command.Flags().StringVar(&options.stateDir, "state-dir", "", "Craftmake state directory")
+	command.Flags().BoolVar(&options.legacyConfig, "legacy-config", false, "Load configuration through the legacy compatibility adapter")
+	_ = command.Flags().MarkHidden("legacy-config")
 	_ = command.MarkFlagRequired("config")
 }
 
@@ -788,9 +944,29 @@ func loadPlan(options *commonOptions) (*compiler.Plan, error) {
 		return nil, configurationError(fmt.Errorf("resolve config path: %w", err))
 	}
 	options.configPath = absoluteConfigPath
-	context, err := otter.Load(options.configPath)
+	var context *compiler.Context
+	if options.legacyConfig {
+		context, err = otter.LoadLegacy(options.configPath)
+	} else {
+		context, err = otter.Load(options.configPath)
+	}
 	if err != nil {
 		return nil, configurationError(err)
+	}
+	options.resolvedBackend = context.Workflow.Backend
+	if options.legacyConfig {
+		options.resolvedRunID = ""
+		if options.resolvedBackend == "" {
+			options.resolvedBackend = "local"
+		}
+	} else {
+		options.resolvedRunID = context.Workflow.JobID
+	}
+	if options.projectDir == "" {
+		options.projectDir = context.Paths["project"]
+	}
+	if options.stateDir == "" {
+		options.stateDir = context.Paths["state"]
 	}
 
 	if options.workflowPath == "" {

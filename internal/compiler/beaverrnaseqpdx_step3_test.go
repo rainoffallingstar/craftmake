@@ -16,7 +16,7 @@ func TestCompileBeaverRNASEQPDXStep3Fixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	context, err := otter.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverrnaseqpdx-step3.yaml"))
+	context, err := otter.LoadLegacy(filepath.Join(repositoryRoot, "testdata", "configs", "beaverrnaseqpdx-step3.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

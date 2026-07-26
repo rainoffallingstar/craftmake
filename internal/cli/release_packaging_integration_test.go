@@ -87,7 +87,7 @@ func TestMakeReleaseBuildsPortableLinuxArchives(t *testing.T) {
 
 	validateCommand := exec.Command(installedBinary,
 		"validate",
-		"--config", filepath.Join(repositoryRoot, "testdata", "configs", "beaverrna-step2-check.yaml"),
+		"--legacy-config", "--config", filepath.Join(repositoryRoot, "testdata", "configs", "beaverrna-step2-check.yaml"),
 		"--phase", "step2-check",
 	)
 	validateCommand.Dir = temporaryDirectory

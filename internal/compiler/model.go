@@ -6,82 +6,84 @@ import (
 )
 
 type Context struct {
-	Raw      map[string]any
-	Workflow WorkflowContext
-	Samples  []SampleContext
-	Species  []SpeciesContext
-	Paths    map[string]string
+	Raw      map[string]any    `json:"raw"`
+	Workflow WorkflowContext   `json:"workflow"`
+	Samples  []SampleContext   `json:"samples"`
+	Species  []SpeciesContext  `json:"species"`
+	Paths    map[string]string `json:"paths"`
 }
 
 type WorkflowContext struct {
-	Mode         string
-	WorkflowName string
-	JobID        string
-	UserID       string
-	PDXMode      bool
+	Mode         string `json:"mode"`
+	WorkflowName string `json:"workflow_name"`
+	JobID        string `json:"job_id"`
+	UserID       string `json:"user_id"`
+	Executor     string `json:"executor,omitempty"`
+	Backend      string `json:"backend,omitempty"`
+	PDXMode      bool   `json:"pdx_mode"`
 }
 
 type SampleContext struct {
-	ID       string
-	Index    int
-	Read1    string
-	Read2    string
-	Adapter1 string
-	Adapter2 string
+	ID       string `json:"id"`
+	Index    int    `json:"index"`
+	Read1    string `json:"read1"`
+	Read2    string `json:"read2"`
+	Adapter1 string `json:"adapter1"`
+	Adapter2 string `json:"adapter2"`
 }
 
 type SpeciesContext struct {
-	Name            string
-	Index           int
-	Role            string
-	GenomeFasta     string
-	GenomeIndex     string
-	RNASeqGTF       string
-	RNASeqReference string
+	Name            string `json:"name"`
+	Index           int    `json:"index"`
+	Role            string `json:"role"`
+	GenomeFasta     string `json:"genome_fasta"`
+	GenomeIndex     string `json:"genome_index"`
+	RNASeqGTF       string `json:"rnaseq_gtf"`
+	RNASeqReference string `json:"rnaseq_reference"`
 }
 
 type Task struct {
-	ID                  string
-	JobID               string
-	JobName             string
-	Workflow            string
-	Phase               string
-	Scope               string
-	Dimensions          map[string]string
-	Inputs              map[string][]string
-	Outputs             map[string]string
-	Resources           protocol.ResourceRequest
-	Worker              *WorkerPlan
-	Environment         string
-	Env                 map[string]string
-	Steps               []protocol.StepManifest
-	Dependencies        []string
-	MaxAttempts         int
-	CompressSuccessLogs bool
-	Fingerprint         string
+	ID                  string                   `json:"id"`
+	JobID               string                   `json:"job_id"`
+	JobName             string                   `json:"job_name"`
+	Workflow            string                   `json:"workflow"`
+	Phase               string                   `json:"phase"`
+	Scope               string                   `json:"scope"`
+	Dimensions          map[string]string        `json:"dimensions"`
+	Inputs              map[string][]string      `json:"inputs"`
+	Outputs             map[string]string        `json:"outputs"`
+	Resources           protocol.ResourceRequest `json:"resources"`
+	Worker              *WorkerPlan              `json:"worker,omitempty"`
+	Environment         string                   `json:"environment,omitempty"`
+	Env                 map[string]string        `json:"env,omitempty"`
+	Steps               []protocol.StepManifest  `json:"steps"`
+	Dependencies        []string                 `json:"dependencies"`
+	MaxAttempts         int                      `json:"max_attempts"`
+	CompressSuccessLogs bool                     `json:"compress_success_logs"`
+	Fingerprint         string                   `json:"fingerprint"`
 }
 
 type WorkerPlan struct {
-	Resources   protocol.ResourceRequest
-	MaxParallel int
+	Resources   protocol.ResourceRequest `json:"resources"`
+	MaxParallel int                      `json:"max_parallel"`
 }
 
 type SubmissionGroup struct {
-	ID        string
-	Scope     string
-	GroupKey  string
-	TaskIDs   []string
-	Resources protocol.ResourceRequest
-	Worker    *WorkerPlan
+	ID        string                   `json:"id"`
+	Scope     string                   `json:"scope"`
+	GroupKey  string                   `json:"group_key"`
+	TaskIDs   []string                 `json:"task_ids"`
+	Resources protocol.ResourceRequest `json:"resources"`
+	Worker    *WorkerPlan              `json:"worker,omitempty"`
 }
 
 type Plan struct {
-	Workflow    string
-	Phase       string
-	Name        string
-	Tasks       []*Task
-	TaskByID    map[string]*Task
-	Order       []string
-	Submissions []SubmissionGroup
-	Source      *spec.WorkflowSpec
+	Workflow    string             `json:"workflow"`
+	Phase       string             `json:"phase"`
+	Name        string             `json:"name"`
+	Tasks       []*Task            `json:"tasks"`
+	TaskByID    map[string]*Task   `json:"task_by_id"`
+	Order       []string           `json:"order"`
+	Submissions []SubmissionGroup  `json:"submissions"`
+	Source      *spec.WorkflowSpec `json:"source"`
 }

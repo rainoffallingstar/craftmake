@@ -16,7 +16,7 @@ func TestCompileBeaverRNAStep2CheckFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	context, err := otter.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverrna-step2-check.yaml"))
+	context, err := otter.LoadLegacy(filepath.Join(repositoryRoot, "testdata", "configs", "beaverrna-step2-check.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

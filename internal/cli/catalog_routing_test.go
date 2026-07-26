@@ -28,9 +28,10 @@ func TestLoadPlanAutomaticallyRoutesOtterConfigurations(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			options := commonOptions{
-				configPath: filepath.Join(repositoryRoot, testCase.configuration),
-				catalogDir: filepath.Join(repositoryRoot, "workflows"),
-				phase:      testCase.phase,
+				configPath:   filepath.Join(repositoryRoot, testCase.configuration),
+				catalogDir:   filepath.Join(repositoryRoot, "workflows"),
+				phase:        testCase.phase,
+				legacyConfig: true,
 			}
 			plan, err := loadPlan(&options)
 			if err != nil {
@@ -53,8 +54,9 @@ func TestLoadPlanAutomaticallyRoutesOtterConfigurations(t *testing.T) {
 func TestLoadPlanRequiresPhaseWithoutExplicitWorkflow(t *testing.T) {
 	repositoryRoot := cliRepositoryRoot(t)
 	options := commonOptions{
-		configPath: filepath.Join(repositoryRoot, "testdata", "configs", "beaverbs-step1.yaml"),
-		catalogDir: filepath.Join(repositoryRoot, "workflows"),
+		configPath:   filepath.Join(repositoryRoot, "testdata", "configs", "beaverbs-step1.yaml"),
+		catalogDir:   filepath.Join(repositoryRoot, "workflows"),
+		legacyConfig: true,
 	}
 	_, err := loadPlan(&options)
 	if err == nil || !strings.Contains(err.Error(), "--phase is required") {
@@ -65,9 +67,10 @@ func TestLoadPlanRequiresPhaseWithoutExplicitWorkflow(t *testing.T) {
 func TestLoadPlanReportsMissingCatalogEntry(t *testing.T) {
 	repositoryRoot := cliRepositoryRoot(t)
 	options := commonOptions{
-		configPath: filepath.Join(repositoryRoot, "testdata", "configs", "beaverrna-step1.yaml"),
-		catalogDir: t.TempDir(),
-		phase:      "step3",
+		configPath:   filepath.Join(repositoryRoot, "testdata", "configs", "beaverrna-step1.yaml"),
+		catalogDir:   t.TempDir(),
+		phase:        "step3",
+		legacyConfig: true,
 	}
 	_, err := loadPlan(&options)
 	if err == nil || !strings.Contains(err.Error(), "BeaverRNA/step3.yaml was not found") {
@@ -80,6 +83,7 @@ func TestLoadPlanRejectsExplicitWorkflowForDifferentConfigurationType(t *testing
 	options := commonOptions{
 		configPath:   filepath.Join(repositoryRoot, "testdata", "configs", "beaverrna-step1.yaml"),
 		workflowPath: filepath.Join(repositoryRoot, "workflows", "BeaverBS", "step1.yaml"),
+		legacyConfig: true,
 	}
 	_, err := loadPlan(&options)
 	if err == nil || !strings.Contains(err.Error(), "config resolves to BeaverRNA") {

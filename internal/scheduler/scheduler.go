@@ -28,7 +28,9 @@ type Options struct {
 	ProjectDirectory  string
 	StateDirectory    string
 	ConfigPath        string
+	ConfigDigest      string
 	WorkflowPath      string
+	WorkflowDigest    string
 	Backend           backend.Backend
 	MaxParallel       int
 	MaxCores          int
@@ -152,7 +154,9 @@ func (taskScheduler *Scheduler) Run(ctx context.Context) (string, error) {
 		Workflow:         taskScheduler.plan.Workflow,
 		Phase:            taskScheduler.plan.Phase,
 		ConfigPath:       taskScheduler.options.ConfigPath,
+		ConfigDigest:     taskScheduler.options.ConfigDigest,
 		WorkflowPath:     taskScheduler.options.WorkflowPath,
+		WorkflowDigest:   taskScheduler.options.WorkflowDigest,
 		Backend:          taskScheduler.options.Backend.Name(),
 		CraftmakeVersion: taskScheduler.options.Version,
 		ResumedFromRunID: taskScheduler.options.ResumedFromRunID,

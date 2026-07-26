@@ -24,7 +24,7 @@ func TestRunAutomaticallyRoutesCatalogWorkflowAndUsesCache(t *testing.T) {
 	commandEnvironment := append(os.Environ(), "PATH="+toolDirectory+string(os.PathListSeparator)+os.Getenv("PATH"))
 	firstRunOutput := runCraftmake(t, binaryPath, commandEnvironment,
 		"run",
-		"--config", filepath.Join(projectDirectory, "config.yaml"),
+		"--legacy-config", "--config", filepath.Join(projectDirectory, "config.yaml"),
 		"--phase", "step1",
 		"--catalog", filepath.Join(repositoryRoot, "workflows"),
 		"--project-dir", projectDirectory,
@@ -55,7 +55,7 @@ func TestRunAutomaticallyRoutesCatalogWorkflowAndUsesCache(t *testing.T) {
 
 	secondRunOutput := runCraftmake(t, binaryPath, commandEnvironment,
 		"run",
-		"--config", filepath.Join(projectDirectory, "config.yaml"),
+		"--legacy-config", "--config", filepath.Join(projectDirectory, "config.yaml"),
 		"--phase", "step1",
 		"--catalog", filepath.Join(repositoryRoot, "workflows"),
 		"--project-dir", projectDirectory,

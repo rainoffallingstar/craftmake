@@ -17,7 +17,7 @@ func TestCompileBeaverBSStep1Fixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	context, err := otter.Load(filepath.Join(repositoryRoot, "testdata", "configs", "beaverbs-step1.yaml"))
+	context, err := otter.LoadLegacy(filepath.Join(repositoryRoot, "testdata", "configs", "beaverbs-step1.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

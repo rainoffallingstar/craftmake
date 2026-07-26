@@ -51,7 +51,7 @@ func TestMakeInstallProvidesPortableWorkflowCatalog(t *testing.T) {
 	}
 	validateCommand := exec.Command(installedBinary,
 		"validate",
-		"--config", filepath.Join(repositoryRoot, "testdata", "configs", "beaverrnaseqpdx-step3-check.yaml"),
+		"--legacy-config", "--config", filepath.Join(repositoryRoot, "testdata", "configs", "beaverrnaseqpdx-step3-check.yaml"),
 		"--phase", "step3-check",
 	)
 	validateCommand.Dir = unrelatedWorkingDirectory

@@ -35,7 +35,7 @@ func TestBeaverBSStep1WithRealTools(t *testing.T) {
 	runOutput := runCraftmake(t, binaryPath, os.Environ(),
 		"run",
 		"--workflow", workflowPath,
-		"--config", filepath.Join(projectDirectory, "config.yaml"),
+		"--legacy-config", "--config", filepath.Join(projectDirectory, "config.yaml"),
 		"--project-dir", projectDirectory,
 		"--backend", "local",
 		"--max-parallel", "2",

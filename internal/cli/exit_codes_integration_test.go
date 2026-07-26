@@ -88,7 +88,7 @@ jobs:
 			expectedOutput:   "read otter config",
 			arguments: []string{
 				"validate",
-				"--config", filepath.Join(temporaryDirectory, "missing-config.yaml"),
+				"--legacy-config", "--config", filepath.Join(temporaryDirectory, "missing-config.yaml"),
 				"--workflow", smokeWorkflowPath,
 			},
 		},
@@ -98,7 +98,7 @@ jobs:
 			expectedOutput:   "on.otter.workflow and on.otter.phase are required",
 			arguments: []string{
 				"validate",
-				"--config", smokeConfigurationPath,
+				"--legacy-config", "--config", smokeConfigurationPath,
 				"--workflow", legacyTriggerWorkflowPath,
 			},
 		},
@@ -108,7 +108,7 @@ jobs:
 			expectedOutput:   "definitely-not-memory",
 			arguments: []string{
 				"validate",
-				"--config", smokeConfigurationPath,
+				"--legacy-config", "--config", smokeConfigurationPath,
 				"--workflow", compilationFailureWorkflowPath,
 			},
 		},
@@ -201,7 +201,7 @@ jobs:
 		binaryPath,
 		"run",
 		"--workflow", workflowPath,
-		"--config", filepath.Join(repositoryRoot, "testdata", "configs", "smoke.yaml"),
+		"--legacy-config", "--config", filepath.Join(repositoryRoot, "testdata", "configs", "smoke.yaml"),
 		"--project-dir", projectDirectory,
 		"--state-dir", stateDirectory,
 		"--run-id", runID,
