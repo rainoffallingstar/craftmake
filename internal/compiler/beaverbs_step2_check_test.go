@@ -2,6 +2,7 @@ package compiler_test
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/fallingstar10/craftmake/internal/adapters/otter"
@@ -23,23 +24,34 @@ func TestCompileBeaverBSStep2CheckFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Tasks) != 4 || len(plan.Submissions) != 4 {
-		t.Fatalf("expected four tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
+	if len(plan.Tasks) != 3 || len(plan.Submissions) != 3 {
+		t.Fatalf("expected three tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
 	}
 
 	artifactTask := plan.TaskByID["BeaverBS/step2-check/sample_artifacts/sample=sample-a/species=human"]
 	if artifactTask == nil || len(artifactTask.Inputs) != 7 {
 		t.Fatalf("unexpected sample artifact task: %#v", artifactTask)
 	}
+	for _, requiredFragment := range []string{
+		"otter.sample-artifacts-validation/v1",
+		"gc_metrics",
+		"gc_chart",
+		"gc_summary",
+		"sha256sum",
+		"regular non-symlink file",
+	} {
+		if !strings.Contains(artifactTask.Steps[0].Command, requiredFragment) {
+			t.Fatalf("sample validation manifest command does not contain %q:\n%s", requiredFragment, artifactTask.Steps[0].Command)
+		}
+	}
 	multiQCTask := plan.TaskByID["BeaverBS/step2-check/multiqc"]
 	if multiQCTask == nil || len(multiQCTask.Inputs["sample_artifacts"]) != 2 || len(multiQCTask.Dependencies) != 2 {
 		t.Fatalf("unexpected MultiQC aggregation: %#v", multiQCTask)
 	}
-	checkerTask := plan.TaskByID["BeaverBS/step2-check/step2_checker"]
-	if checkerTask == nil || len(checkerTask.Inputs["sample_artifacts"]) != 2 || len(checkerTask.Dependencies) != 3 {
-		t.Fatalf("unexpected step2 checker aggregation: %#v", checkerTask)
+	if multiQCTask.Outputs["report"] != filepath.Join("workflow", "QC", "summary", "multiqc_report.html") {
+		t.Fatalf("unexpected typed step2 terminal report %q", multiQCTask.Outputs["report"])
 	}
-	if checkerTask.Outputs["success_marker"] != filepath.Join("workflow", "log", "step2_success.txt") {
-		t.Fatalf("unexpected checker marker %q", checkerTask.Outputs["success_marker"])
+	if plan.TaskByID["BeaverBS/step2-check/step2_checker"] != nil {
+		t.Fatal("step2-check must not create a marker-only checker task")
 	}
 }

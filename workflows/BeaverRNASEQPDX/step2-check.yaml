@@ -30,10 +30,66 @@ jobs:
       memory: 1G
       partition: cpu
     steps:
-      - name: Record validated RNA-seq PDX artifacts
+      - name: Write validated RNA-seq PDX artifact manifest
         run: |
-          mkdir -p "$(dirname '${{ outputs.ready }}')"
-          touch '${{ outputs.ready }}'
+          output_path='${{ outputs.ready }}'
+          mkdir -p "$(dirname "$output_path")"
+          temporary_path="$(mktemp "${output_path}.tmp.XXXXXX")"
+          trap 'rm -f "$temporary_path"' EXIT
+
+          ensure_json_safe_string() {
+            local value="$1"
+            if printf '%s' "$value" | LC_ALL=C grep -q '[[:cntrl:]"\\]'; then
+              printf 'validated artifact metadata contains unsupported JSON characters: %s\n' "$value" >&2
+              exit 1
+            fi
+          }
+
+          write_artifact() {
+            local artifact_id="$1"
+            local artifact_path="$2"
+            local media_type="$3"
+            ensure_json_safe_string "$artifact_id"
+            ensure_json_safe_string "$artifact_path"
+            ensure_json_safe_string "$media_type"
+            if [[ -L "$artifact_path" || ! -f "$artifact_path" ]]; then
+              printf 'validated artifact must be a regular non-symlink file: %s\n' "$artifact_path" >&2
+              exit 1
+            fi
+            local size_bytes sha256
+            size_bytes="$(wc -c < "$artifact_path" | tr -d '[:space:]')"
+            if [[ ! "$size_bytes" =~ ^[1-9][0-9]*$ ]]; then
+              printf 'validated artifact must be non-empty: %s\n' "$artifact_path" >&2
+              exit 1
+            fi
+            sha256="$(sha256sum -- "$artifact_path" | awk '{print $1}')"
+            if [[ ! "$sha256" =~ ^[a-f0-9]{64}$ ]]; then
+              printf 'could not calculate SHA-256 for validated artifact: %s\n' "$artifact_path" >&2
+              exit 1
+            fi
+            printf '{"id":"%s","path":"%s","media_type":"%s","size_bytes":%s,"sha256":"%s"}' \
+              "$artifact_id" "$artifact_path" "$media_type" "$size_bytes" "$sha256"
+          }
+
+          ensure_json_safe_string '${{ sample.id }}'
+          ensure_json_safe_string '${{ species.name }}'
+          {
+            printf '{"schema_version":"otter.sample-artifacts-validation/v1","status":"validated","workflow":"BeaverRNASEQPDX","phase":"step2-check","sample_id":"%s","dimensions":{"sample":"%s","species":"%s"},"artifacts":[' '${{ sample.id }}' '${{ sample.id }}' '${{ species.name }}'
+            first_artifact=true
+            for artifact in \
+              "bam|${{ inputs.bam }}|application/x-bam" \
+              "bam_index|${{ inputs.bam_index }}|application/x-bam-index" \
+              "qualimap_html|${{ inputs.qualimap_html }}|text/html" \
+              "qualimap_pdf|${{ inputs.qualimap_pdf }}|application/pdf"; do
+              IFS='|' read -r artifact_id artifact_path media_type <<< "$artifact"
+              if ! "$first_artifact"; then printf ','; fi
+              write_artifact "$artifact_id" "$artifact_path" "$media_type"
+              first_artifact=false
+            done
+            printf ']}\n'
+          } > "$temporary_path"
+          mv -f "$temporary_path" "$output_path"
+          trap - EXIT
 
   patch_bam:
     name: Recalculate RNA-seq PDX BAM alignment tags
@@ -45,7 +101,6 @@ jobs:
       reference: "${{ species.genome_fasta }}"
     outputs:
       fixed_bam: "${{ config.directories.bsmap.main }}/${{ sample.id }}_fixed_${{ species.name }}.bam"
-      success_marker: "${{ config.directories.bsmap.main }}/${{ sample.id }}_${{ species.name }}_pdx_patch_success"
     resources:
       cores: 4
       memory: 16G
@@ -57,7 +112,10 @@ jobs:
             export JAVA_HOME="${CONDA_PREFIX}/lib/jvm"
           fi
           picard SetNmMdAndUqTags I='${{ inputs.bam }}' O='${{ outputs.fixed_bam }}' R='${{ inputs.reference }}' IS_BISULFITE_SEQUENCE=false
-          touch '${{ outputs.success_marker }}'
+          if [[ -L '${{ outputs.fixed_bam }}' || ! -s '${{ outputs.fixed_bam }}' ]]; then
+            printf 'Picard did not produce a non-empty fixed BAM: %s\n' '${{ outputs.fixed_bam }}' >&2
+            exit 1
+          fi
 
   xenofilx:
     name: Filter host reads from RNA-seq PDX BAM files
@@ -66,7 +124,7 @@ jobs:
     inputs:
       patched_bams: "${{ jobs.patch_bam.outputs.fixed_bam }}"
     outputs:
-      success_marker: "${{ config.directories.bsmap.main }}/Filtered_bams/filtered_success.txt"
+      validation_manifest: "${{ config.directories.bsmap.main }}/Filtered_bams/filtered-bam-validation.json"
     resources:
       cores: 4
       memory: 16G
@@ -115,44 +173,65 @@ jobs:
             mv "$temporary_filtered_bam" "$final_filtered_bam"
             mv "$temporary_filtered_bam.bai" "$final_filtered_bam.bai"
           done
-          touch '${{ outputs.success_marker }}'
+          manifest_path='${{ outputs.validation_manifest }}'
+          temporary_manifest="$(mktemp "${manifest_path}.tmp.XXXXXX")"
+          trap 'rm -rf "$temporary_filtered_directory"; rm -f "$temporary_manifest"' EXIT
 
-  filtered_artifacts:
-    name: Validate RNA-seq Xenofilx sample outputs
-    scope: sample
-    dimensions: [sample]
-    inputs:
-      filter_complete: "${{ jobs.xenofilx.outputs.success_marker }}"
-      filtered_bam: "${{ config.directories.bsmap.main }}/Filtered_bams/${{ sample.id }}_fixed_${{ config.workflow.species.graft }}_Filtered.bam"
-    outputs:
-      ready: "${{ config.directories.sid_log }}/step2-check/${{ sample.id }}_filtered.ready"
-    resources:
-      cores: 1
-      memory: 1G
-      partition: cpu
-    steps:
-      - name: Record validated RNA-seq filtered BAM
-        run: |
-          mkdir -p "$(dirname '${{ outputs.ready }}')"
-          touch '${{ outputs.ready }}'
+          ensure_json_safe_string() {
+            local value="$1"
+            if printf '%s' "$value" | LC_ALL=C grep -q '[[:cntrl:]"\\]'; then
+              printf 'filtered BAM manifest metadata contains unsupported JSON characters: %s\n' "$value" >&2
+              exit 1
+            fi
+          }
 
-  step2_checker:
-    name: Check BeaverRNASEQPDX step2
-    scope: global
-    dimensions: []
-    inputs:
-      sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
-      patch_markers: "${{ jobs.patch_bam.outputs.success_marker }}"
-      filtered_bams: "${{ jobs.filtered_artifacts.outputs.ready }}"
-      filter_marker: "${{ jobs.xenofilx.outputs.success_marker }}"
-    outputs:
-      success_marker: "${{ config.directories.sid_log }}/step2_success.txt"
-    resources:
-      cores: 1
-      memory: 1G
-      partition: cpu
-    steps:
-      - name: Write step2 success marker
-        run: |
-          mkdir -p "$(dirname '${{ outputs.success_marker }}')"
-          touch '${{ outputs.success_marker }}'
+          write_filtered_artifact() {
+            local sample_id="$1"
+            local filtered_bam="$2"
+            local filtered_bai="$3"
+            ensure_json_safe_string "$sample_id"
+            ensure_json_safe_string "$filtered_bam"
+            ensure_json_safe_string "$filtered_bai"
+            if [[ -L "$filtered_bam" || ! -f "$filtered_bam" || -L "$filtered_bai" || ! -f "$filtered_bai" ]]; then
+              printf 'filtered BAM and BAI must be regular non-symlink files: %s, %s\n' "$filtered_bam" "$filtered_bai" >&2
+              exit 1
+            fi
+            local bam_size_bytes bai_size_bytes bam_sha256 bai_sha256 mapped_read_count
+            bam_size_bytes="$(wc -c < "$filtered_bam" | tr -d '[:space:]')"
+            bai_size_bytes="$(wc -c < "$filtered_bai" | tr -d '[:space:]')"
+            if [[ ! "$bam_size_bytes" =~ ^[1-9][0-9]*$ || ! "$bai_size_bytes" =~ ^[1-9][0-9]*$ ]]; then
+              printf 'filtered BAM and BAI must be non-empty: %s, %s\n' "$filtered_bam" "$filtered_bai" >&2
+              exit 1
+            fi
+            "$samtools_path" quickcheck -v "$filtered_bam"
+            mapped_read_count="$("$samtools_path" view -c -F 4 "$filtered_bam")"
+            if [[ ! "$mapped_read_count" =~ ^[1-9][0-9]*$ ]]; then
+              printf 'filtered BAM has no mapped reads: %s\n' "$filtered_bam" >&2
+              exit 1
+            fi
+            bam_sha256="$(sha256sum -- "$filtered_bam" | awk '{print $1}')"
+            bai_sha256="$(sha256sum -- "$filtered_bai" | awk '{print $1}')"
+            if [[ ! "$bam_sha256" =~ ^[a-f0-9]{64}$ || ! "$bai_sha256" =~ ^[a-f0-9]{64}$ ]]; then
+              printf 'could not calculate filtered BAM checksums: %s, %s\n' "$filtered_bam" "$filtered_bai" >&2
+              exit 1
+            fi
+            printf '{"sample_id":"%s","bam_path":"%s","bam_size_bytes":%s,"bam_sha256":"%s","bai_path":"%s","bai_size_bytes":%s,"bai_sha256":"%s","mapped_read_count":%s}' \
+              "$sample_id" "$filtered_bam" "$bam_size_bytes" "$bam_sha256" "$filtered_bai" "$bai_size_bytes" "$bai_sha256" "$mapped_read_count"
+          }
+
+          ensure_json_safe_string '${{ config.workflow.species.graft }}'
+          {
+            printf '{"schema_version":"otter.filtered-bam-validation/v1","status":"validated","workflow":"BeaverRNASEQPDX","phase":"step2-check","graft_species":"%s","artifacts":[' '${{ config.workflow.species.graft }}'
+            first_artifact=true
+            for graft_bam in "${graft_bams[@]}"; do
+              sample_id="$(basename "$graft_bam" _fixed_'${{ config.workflow.species.graft }}'.bam)"
+              filtered_bam="$filtered_directory/${sample_id}_fixed_${{ config.workflow.species.graft }}_Filtered.bam"
+              if ! "$first_artifact"; then printf ','; fi
+              write_filtered_artifact "$sample_id" "$filtered_bam" "$filtered_bam.bai"
+              first_artifact=false
+            done
+            printf ']}\n'
+          } > "$temporary_manifest"
+          mv -f "$temporary_manifest" "$manifest_path"
+          trap - EXIT
+          rm -rf "$temporary_filtered_directory"

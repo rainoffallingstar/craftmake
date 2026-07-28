@@ -96,7 +96,7 @@ func TestMakeReleaseBuildsPortableLinuxArchives(t *testing.T) {
 	if err != nil {
 		t.Fatalf("release catalog validation: %v\n%s", err, validateOutput)
 	}
-	if !strings.Contains(string(validateOutput), "valid: BeaverRNA step2-check (6 tasks, 6 submissions)") {
+	if !strings.Contains(string(validateOutput), "valid: BeaverRNA step2-check (5 tasks, 5 submissions)") {
 		t.Fatalf("unexpected release validation output %q", validateOutput)
 	}
 

@@ -273,7 +273,7 @@ func expandDimensions(dimensions []string, context *Context) ([]map[string]strin
 }
 
 func taskValues(context *Context, dimensions map[string]string, inputs map[string][]string, outputs map[string]string, resources protocol.ResourceRequest, worker *WorkerPlan, runnerTemp, runnerWork string) map[string]any {
-	values := map[string]any{"config": context.Raw, "inputs": stringSlicesToAny(inputs), "outputs": stringsToAny(outputs), "resources": map[string]any{"cores": resources.Cores, "memory_bytes": resources.MemoryByte, "partition": resources.Partition, "time": resources.Time}, "runner": map[string]any{"temp": "${CRAFTMAKE_TEMP}", "work": "${CRAFTMAKE_WORK}"}}
+	values := map[string]any{"config": context.Raw, "paths": stringsToAny(context.Paths), "inputs": stringSlicesToAny(inputs), "outputs": stringsToAny(outputs), "resources": map[string]any{"cores": resources.Cores, "memory_bytes": resources.MemoryByte, "partition": resources.Partition, "time": resources.Time}, "runner": map[string]any{"temp": "${CRAFTMAKE_TEMP}", "work": "${CRAFTMAKE_WORK}"}}
 	if sampleID := dimensions["sample"]; sampleID != "" {
 		for _, sample := range context.Samples {
 			if sample.ID == sampleID {

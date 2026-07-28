@@ -1,6 +1,9 @@
 package cli_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,7 +40,7 @@ func TestBeaverBSStep3CheckRunsLocallyAndUsesCache(t *testing.T) {
 	)
 	firstRunID := outputValue(t, firstRunOutput, "run_id")
 	firstStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", firstRunID)
-	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 9") {
+	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 8") {
 		t.Fatalf("unexpected first BeaverBS step3-check status:\n%s", firstStatus)
 	}
 
@@ -51,12 +54,16 @@ func TestBeaverBSStep3CheckRunsLocallyAndUsesCache(t *testing.T) {
 		"workflow/bsmap/human/sample-b.html",
 		"workflow/bsmap/human/bismark_summary_report.html",
 		"workflow/QC/summary/qc_summary.xlsx",
-		"workflow/log/step3_success.txt",
 	} {
 		if _, err := os.Stat(filepath.Join(projectDirectory, expectedOutput)); err != nil {
 			t.Fatalf("expected BeaverBS step3-check output %q: %v", expectedOutput, err)
 		}
 	}
+	if _, err := os.Stat(filepath.Join(projectDirectory, "workflow", "log", "step3_success.txt")); !os.IsNotExist(err) {
+		t.Fatalf("step3-check must not generate a marker-only success file, stat error=%v", err)
+	}
+	assertBeaverBSStep3ValidationManifest(t, projectDirectory, "sample-a")
+	assertBeaverBSStep3ValidationManifest(t, projectDirectory, "sample-b")
 
 	secondRunOutput := runCraftmake(t, binaryPath, commandEnvironment,
 		"run",
@@ -70,7 +77,7 @@ func TestBeaverBSStep3CheckRunsLocallyAndUsesCache(t *testing.T) {
 	)
 	secondRunID := outputValue(t, secondRunOutput, "run_id")
 	secondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID)
-	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 9") {
+	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 8") {
 		t.Fatalf("unexpected cached BeaverBS step3-check status:\n%s", secondStatus)
 	}
 }
@@ -220,5 +227,84 @@ reference:
 `
 	if err := os.WriteFile(filepath.Join(projectDirectory, "config.yaml"), []byte(configuration), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type sampleArtifactValidationManifest struct {
+	SchemaVersion string                             `json:"schema_version"`
+	Status        string                             `json:"status"`
+	Workflow      string                             `json:"workflow"`
+	Phase         string                             `json:"phase"`
+	SampleID      string                             `json:"sample_id"`
+	Dimensions    map[string]string                  `json:"dimensions"`
+	Artifacts     []sampleArtifactValidationArtifact `json:"artifacts"`
+}
+
+type sampleArtifactValidationArtifact struct {
+	ID        string `json:"id"`
+	Path      string `json:"path"`
+	MediaType string `json:"media_type"`
+	SizeBytes int64  `json:"size_bytes"`
+	SHA256    string `json:"sha256"`
+}
+
+func assertBeaverBSStep3ValidationManifest(t *testing.T, projectDirectory string, sampleID string) {
+	t.Helper()
+	manifestPath := filepath.Join(projectDirectory, "workflow", "log", "step3-check", sampleID+".ready")
+	manifestData, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read validation manifest %q: %v", manifestPath, err)
+	}
+
+	var manifest sampleArtifactValidationManifest
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		t.Fatalf("parse validation manifest %q: %v\n%s", manifestPath, err, manifestData)
+	}
+	if manifest.SchemaVersion != "otter.sample-artifacts-validation/v1" ||
+		manifest.Status != "validated" ||
+		manifest.Workflow != "BeaverBS" ||
+		manifest.Phase != "step3-check" ||
+		manifest.SampleID != sampleID ||
+		manifest.Dimensions["sample"] != sampleID ||
+		len(manifest.Dimensions) != 1 {
+		t.Fatalf("unexpected validation manifest identity: %#v", manifest)
+	}
+
+	expectedArtifactPaths := map[string]string{
+		"coverage":         filepath.Join("workflow", "mCall", sampleID+"_nsort.bismark.cov.gz"),
+		"name_sorted_bam":  filepath.Join("workflow", "bsmap", sampleID+"_nsort.bam"),
+		"trim_report_r1":   filepath.Join("workflow", "trim", sampleID+"_R1.fastq.gz_trimming_report.txt"),
+		"trim_report_r2":   filepath.Join("workflow", "trim", sampleID+"_R2.fastq.gz_trimming_report.txt"),
+		"fastqc_before_r1": filepath.Join("workflow", "fastqc_raw", sampleID+"_R1_fastqcx", "fastqc_data.txt"),
+		"fastqc_before_r2": filepath.Join("workflow", "fastqc_raw", sampleID+"_R2_fastqcx", "fastqc_data.txt"),
+		"fastqc_after_r1":  filepath.Join("workflow", "fastqc_clean", sampleID+"_val_1_fastqcx", "fastqc_data.txt"),
+		"fastqc_after_r2":  filepath.Join("workflow", "fastqc_clean", sampleID+"_val_2_fastqcx", "fastqc_data.txt"),
+		"sorted_bam":       filepath.Join("workflow", "bsmap", sampleID+"_human.bam"),
+		"qualimap_report":  filepath.Join("workflow", "QC", "qualimap", sampleID+"_human", "qualimapReport.html"),
+	}
+	if len(manifest.Artifacts) != len(expectedArtifactPaths) {
+		t.Fatalf("expected %d validation manifest artifacts, got %#v", len(expectedArtifactPaths), manifest.Artifacts)
+	}
+
+	for _, artifact := range manifest.Artifacts {
+		expectedPath, knownArtifact := expectedArtifactPaths[artifact.ID]
+		if !knownArtifact {
+			t.Fatalf("unexpected validation manifest artifact: %#v", artifact)
+		}
+		if artifact.Path != expectedPath || artifact.MediaType == "" || artifact.SizeBytes <= 0 {
+			t.Fatalf("unexpected validation manifest artifact metadata: %#v", artifact)
+		}
+		artifactData, err := os.ReadFile(filepath.Join(projectDirectory, artifact.Path))
+		if err != nil {
+			t.Fatalf("read validated artifact %q: %v", artifact.Path, err)
+		}
+		digest := sha256.Sum256(artifactData)
+		if artifact.SHA256 != hex.EncodeToString(digest[:]) || artifact.SizeBytes != int64(len(artifactData)) {
+			t.Fatalf("validation manifest artifact digest or size does not match %q: %#v", artifact.Path, artifact)
+		}
+		delete(expectedArtifactPaths, artifact.ID)
+	}
+	if len(expectedArtifactPaths) != 0 {
+		t.Fatalf("validation manifest omitted artifact IDs: %#v", expectedArtifactPaths)
 	}
 }

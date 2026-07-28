@@ -24,6 +24,48 @@ func TestRenderRejectsUnknownPath(t *testing.T) {
 	}
 }
 
+func TestCompileRendersImmutableContextPaths(t *testing.T) {
+	workflow := &spec.WorkflowSpec{
+		Name:     "Publish path contract",
+		Version:  spec.CurrentVersion,
+		On:       spec.TriggerSpec{Otter: spec.OtterTrigger{Workflow: "BeaverBS", Phase: "publish", Modes: []string{"RRBS"}}},
+		Defaults: spec.DefaultsSpec{Shell: "bash"},
+		Jobs: map[string]spec.JobSpec{
+			"publish": {
+				Scope: "global",
+				Outputs: map[string]string{
+					"manifest": "${{ paths.results }}/artifacts.json",
+				},
+				Resources: spec.ResourceSpec{Cores: 1, Memory: "1G"},
+				Steps: []spec.StepSpec{{
+					Name: "publish",
+					Run:  "otter artifact publish '${{ paths.config }}' '${{ paths.work }}/publish/declarations.json'",
+				}},
+			},
+		},
+	}
+	context := &Context{
+		Workflow: WorkflowContext{Mode: "RRBS"},
+		Paths: map[string]string{
+			"config":  "/project/runs/run-20260727T010203Z-abcdef/run.yaml",
+			"work":    "/project/runs/run-20260727T010203Z-abcdef/work",
+			"results": "/project/runs/run-20260727T010203Z-abcdef/results",
+		},
+	}
+	plan, err := Compile(workflow, context)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publishTask := plan.Tasks[0]
+	if publishTask.Outputs["manifest"] != "/project/runs/run-20260727T010203Z-abcdef/results/artifacts.json" {
+		t.Fatalf("unexpected manifest output: %#v", publishTask.Outputs)
+	}
+	if !strings.Contains(publishTask.Steps[0].Command, "'/project/runs/run-20260727T010203Z-abcdef/run.yaml'") ||
+		!strings.Contains(publishTask.Steps[0].Command, "'/project/runs/run-20260727T010203Z-abcdef/work/publish/declarations.json'") {
+		t.Fatalf("publish command did not render immutable paths: %q", publishTask.Steps[0].Command)
+	}
+}
+
 func TestCompileRejectsBatchAllocationWithInsufficientEffectiveCores(t *testing.T) {
 	workflow := batchWorkflow(spec.ResourceSpec{Cores: 2, Memory: "256M"}, spec.ResourceSpec{Cores: 1, Memory: "64M"}, 4)
 	_, err := Compile(workflow, batchContext(3))

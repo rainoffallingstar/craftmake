@@ -40,18 +40,19 @@ func TestBeaverRNASEQPDXStep3RunsLocallyAndUsesCache(t *testing.T) {
 	for _, expectedOutput := range []string{
 		"workflow/expression/sample-a_human.txt",
 		"workflow/expression/sample-b_human.txt",
-		"workflow/bsmap/RNASplicing/RNASplicing_success.txt",
+		"workflow/bsmap/RNASplicing/splicing-outcome.json",
+		"workflow/bsmap/RNASplicing/events.tsv",
 	} {
 		if _, err := os.Stat(filepath.Join(projectDirectory, expectedOutput)); err != nil {
 			t.Fatalf("expected BeaverRNASEQPDX step3 output %q: %v", expectedOutput, err)
 		}
 	}
-	splicingMarker, err := os.ReadFile(filepath.Join(projectDirectory, "workflow", "bsmap", "RNASplicing", "RNASplicing_success.txt"))
+	splicingOutcome, err := os.ReadFile(filepath.Join(projectDirectory, "workflow", "bsmap", "RNASplicing", "splicing-outcome.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(string(splicingMarker)) != "RNASplicing_DONE" {
-		t.Fatalf("unexpected RNA-seq PDX splicing marker %q", splicingMarker)
+	if !strings.Contains(string(splicingOutcome), `"status": "produced"`) || !strings.Contains(string(splicingOutcome), `"events.tsv"`) {
+		t.Fatalf("unexpected RNA-seq PDX splicing outcome %q", splicingOutcome)
 	}
 
 	secondRunOutput := runCraftmake(t, binaryPath, commandEnvironment,
@@ -114,6 +115,8 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 if [ ! -d "$root_directory" ] || [ ! -f "$pdata_path" ] || [ ! -d "$qc_directory" ] || [ ! -f "$annotation_path" ] || [ "$pdx_mode" != "1" ]; then exit 3; fi
+mkdir -p "$root_directory/RNASplicing"
+printf 'event\tvalue\nSE\t1\n' > "$root_directory/RNASplicing/events.tsv"
 `)
 }
 

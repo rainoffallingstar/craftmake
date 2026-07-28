@@ -1,6 +1,9 @@
 package cli_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,7 +40,7 @@ func TestBeaverPDXStep3CheckRunsLocallyAndUsesCache(t *testing.T) {
 	)
 	firstRunID := outputValue(t, firstRunOutput, "run_id")
 	firstStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", firstRunID)
-	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 13") {
+	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 12") {
 		t.Fatalf("unexpected first BeaverPDX step3-check status:\n%s", firstStatus)
 	}
 
@@ -47,7 +50,6 @@ func TestBeaverPDXStep3CheckRunsLocallyAndUsesCache(t *testing.T) {
 		"workflow/mCall/methrixh5/CpG_coverage.xlsx",
 		"workflow/bsmap/human/bismark_summary_report.html",
 		"workflow/QC/summary/qc_summary.xlsx",
-		"workflow/log/step3_success.txt",
 	}
 	for _, sampleID := range []string{"sample-a", "sample-b"} {
 		expectedOutputs = append(expectedOutputs,
@@ -65,6 +67,28 @@ func TestBeaverPDXStep3CheckRunsLocallyAndUsesCache(t *testing.T) {
 			t.Fatalf("expected BeaverPDX step3-check output %q: %v", expectedOutput, err)
 		}
 	}
+	for _, sampleID := range []string{"sample-a", "sample-b"} {
+		assertBeaverPDXStep3ValidationManifest(t, projectDirectory, sampleID, "", map[string]string{
+			"coverage":         filepath.Join("workflow", "mCall", sampleID+"_nsort.bismark.cov.gz"),
+			"name_sorted_bam":  filepath.Join("workflow", "bsmap", sampleID+"_nsort.bam"),
+			"filtered_bam":     filepath.Join("workflow", "bsmap", "Filtered_bams", sampleID+"_fixed_human_Filtered.bam"),
+			"trim_report_r1":   filepath.Join("workflow", "trim", sampleID+"_R1.fastq.gz_trimming_report.txt"),
+			"trim_report_r2":   filepath.Join("workflow", "trim", sampleID+"_R2.fastq.gz_trimming_report.txt"),
+			"fastqc_before_r1": filepath.Join("workflow", "fastqc_raw", sampleID+"_R1_fastqcx", "fastqc_data.txt"),
+			"fastqc_before_r2": filepath.Join("workflow", "fastqc_raw", sampleID+"_R2_fastqcx", "fastqc_data.txt"),
+			"fastqc_after_r1":  filepath.Join("workflow", "fastqc_clean", sampleID+"_val_1_fastqcx", "fastqc_data.txt"),
+			"fastqc_after_r2":  filepath.Join("workflow", "fastqc_clean", sampleID+"_val_2_fastqcx", "fastqc_data.txt"),
+		})
+		for _, speciesName := range []string{"human", "mouse"} {
+			assertBeaverPDXStep3ValidationManifest(t, projectDirectory, sampleID, speciesName, map[string]string{
+				"sorted_bam":      filepath.Join("workflow", "bsmap", sampleID+"_"+speciesName+".bam"),
+				"qualimap_report": filepath.Join("workflow", "QC", "qualimap", sampleID+"_"+speciesName, "qualimapReport.html"),
+			})
+		}
+	}
+	if _, err := os.Stat(filepath.Join(projectDirectory, "workflow", "log", "step3_success.txt")); !os.IsNotExist(err) {
+		t.Fatalf("step3-check must not generate a marker-only success file, stat error=%v", err)
+	}
 
 	secondRunOutput := runCraftmake(t, binaryPath, commandEnvironment,
 		"run",
@@ -78,8 +102,62 @@ func TestBeaverPDXStep3CheckRunsLocallyAndUsesCache(t *testing.T) {
 	)
 	secondRunID := outputValue(t, secondRunOutput, "run_id")
 	secondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID)
-	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 13") {
+	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 12") {
 		t.Fatalf("unexpected cached BeaverPDX step3-check status:\n%s", secondStatus)
+	}
+}
+
+func assertBeaverPDXStep3ValidationManifest(t *testing.T, projectDirectory string, sampleID string, speciesName string, expectedArtifacts map[string]string) {
+	t.Helper()
+	manifestFilename := sampleID + ".ready"
+	expectedDimensions := map[string]string{"sample": sampleID}
+	if speciesName != "" {
+		manifestFilename = sampleID + "_" + speciesName + "_qc.ready"
+		expectedDimensions["species"] = speciesName
+	}
+	manifestPath := filepath.Join(projectDirectory, "workflow", "log", "step3-check", manifestFilename)
+	manifestData, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read BeaverPDX step3 validation manifest %q: %v", manifestPath, err)
+	}
+
+	var manifest sampleArtifactValidationManifest
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		t.Fatalf("parse BeaverPDX step3 validation manifest %q: %v\n%s", manifestPath, err, manifestData)
+	}
+	if manifest.SchemaVersion != "otter.sample-artifacts-validation/v1" ||
+		manifest.Status != "validated" ||
+		manifest.Workflow != "BeaverPDX" ||
+		manifest.Phase != "step3-check" ||
+		manifest.SampleID != sampleID ||
+		len(manifest.Dimensions) != len(expectedDimensions) {
+		t.Fatalf("unexpected BeaverPDX step3 validation manifest identity: %#v", manifest)
+	}
+	for dimensionName, expectedValue := range expectedDimensions {
+		if manifest.Dimensions[dimensionName] != expectedValue {
+			t.Fatalf("unexpected BeaverPDX step3 validation dimension %q: %#v", dimensionName, manifest.Dimensions)
+		}
+	}
+	if len(manifest.Artifacts) != len(expectedArtifacts) {
+		t.Fatalf("expected %d BeaverPDX step3 validation artifacts, got %#v", len(expectedArtifacts), manifest.Artifacts)
+	}
+	for _, artifact := range manifest.Artifacts {
+		expectedPath, knownArtifact := expectedArtifacts[artifact.ID]
+		if !knownArtifact || artifact.Path != expectedPath || artifact.MediaType == "" || artifact.SizeBytes <= 0 {
+			t.Fatalf("unexpected BeaverPDX step3 validation artifact: %#v", artifact)
+		}
+		artifactData, err := os.ReadFile(filepath.Join(projectDirectory, artifact.Path))
+		if err != nil {
+			t.Fatalf("read validated BeaverPDX step3 artifact %q: %v", artifact.Path, err)
+		}
+		digest := sha256.Sum256(artifactData)
+		if artifact.SHA256 != hex.EncodeToString(digest[:]) || artifact.SizeBytes != int64(len(artifactData)) {
+			t.Fatalf("BeaverPDX step3 validation digest or size does not match %q", artifact.Path)
+		}
+		delete(expectedArtifacts, artifact.ID)
+	}
+	if len(expectedArtifacts) != 0 {
+		t.Fatalf("BeaverPDX step3 validation manifest omitted artifacts: %#v", expectedArtifacts)
 	}
 }
 

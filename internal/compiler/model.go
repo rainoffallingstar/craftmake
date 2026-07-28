@@ -6,21 +6,37 @@ import (
 )
 
 type Context struct {
-	Raw      map[string]any    `json:"raw"`
-	Workflow WorkflowContext   `json:"workflow"`
-	Samples  []SampleContext   `json:"samples"`
-	Species  []SpeciesContext  `json:"species"`
-	Paths    map[string]string `json:"paths"`
+	Raw       map[string]any    `json:"raw"`
+	Workflow  WorkflowContext   `json:"workflow"`
+	Execution ExecutionContext  `json:"execution"`
+	Samples   []SampleContext   `json:"samples"`
+	Species   []SpeciesContext  `json:"species"`
+	Paths     map[string]string `json:"paths"`
+}
+
+type ExecutionContext struct {
+	Slurm SlurmExecutionContext `json:"slurm,omitempty"`
+}
+
+type SlurmExecutionContext struct {
+	Partition   string `json:"partition,omitempty"`
+	Account     string `json:"account,omitempty"`
+	QOS         string `json:"qos,omitempty"`
+	MaxJobs     int    `json:"max_jobs,omitempty"`
+	DefaultTime string `json:"default_time,omitempty"`
+	ScratchRoot string `json:"scratch_root,omitempty"`
 }
 
 type WorkflowContext struct {
-	Mode         string `json:"mode"`
-	WorkflowName string `json:"workflow_name"`
-	JobID        string `json:"job_id"`
-	UserID       string `json:"user_id"`
-	Executor     string `json:"executor,omitempty"`
-	Backend      string `json:"backend,omitempty"`
-	PDXMode      bool   `json:"pdx_mode"`
+	Mode             string   `json:"mode"`
+	WorkflowName     string   `json:"workflow_name"`
+	JobID            string   `json:"job_id"`
+	UserID           string   `json:"user_id"`
+	Executor         string   `json:"executor,omitempty"`
+	Backend          string   `json:"backend,omitempty"`
+	Toolchain        string   `json:"toolchain"`
+	LegacyExtensions []string `json:"legacy_extensions,omitempty"`
+	PDXMode          bool     `json:"pdx_mode"`
 }
 
 type SampleContext struct {

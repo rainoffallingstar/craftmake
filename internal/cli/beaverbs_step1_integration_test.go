@@ -55,7 +55,7 @@ func TestBeaverBSStep1RunsLocallyAndUsesCache(t *testing.T) {
 		t.Fatalf("logs command did not expose controller log path:\n%s", listedLogs)
 	}
 	firstStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", firstRunID)
-	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 7") {
+	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 6") {
 		t.Fatalf("unexpected first run status:\n%s", firstStatus)
 	}
 
@@ -66,11 +66,13 @@ func TestBeaverBSStep1RunsLocallyAndUsesCache(t *testing.T) {
 		"workflow/trim/sample-b_R2.fastq.gz_trimming_report.txt",
 		"workflow/fastqc_clean/sample-a_val_1_fastqcx/fastqc_data.txt",
 		"workflow/fastqc_clean/sample-b_val_2_fastqcx/fastqc_data.txt",
-		"workflow/log/step1_success.txt",
 	} {
 		if _, err := os.Stat(filepath.Join(projectDirectory, expectedOutput)); err != nil {
 			t.Fatalf("expected BeaverBS output %q: %v", expectedOutput, err)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(projectDirectory, "workflow", "log", "step1_success.txt")); !os.IsNotExist(err) {
+		t.Fatalf("step1 must not generate a marker-only success file, stat error=%v", err)
 	}
 
 	secondRunOutput := runCraftmake(t, binaryPath, commandEnvironment,
@@ -85,7 +87,7 @@ func TestBeaverBSStep1RunsLocallyAndUsesCache(t *testing.T) {
 	)
 	secondRunID := outputValue(t, secondRunOutput, "run_id")
 	secondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID)
-	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 7") {
+	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 6") {
 		t.Fatalf("unexpected cached run status:\n%s", secondStatus)
 	}
 	verboseSecondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID, "--verbose")

@@ -16,8 +16,9 @@ import (
 const defaultAdapterValue = "NO_ADAPTER_CAL_USE_DEFAULT"
 
 var (
-	runIDPattern  = regexp.MustCompile(`^run-[0-9]{8}T[0-9]{6}Z-[a-z]{6}`)
-	digestPattern = regexp.MustCompile(`^sha256:[a-f0-9]{64}`)
+	runIDPattern     = regexp.MustCompile("^run-[0-9]{8}T[0-9]{6}Z-[a-z]{6}\\z")
+	digestPattern    = regexp.MustCompile("^sha256:[a-f0-9]{64}\\z")
+	slurmTimePattern = regexp.MustCompile("^(?:[0-9]+-)?[0-9]{1,2}:[0-5][0-9]:[0-5][0-9]\\z")
 )
 
 func Load(path string) (*compiler.Context, error) {
@@ -90,13 +91,25 @@ func Load(path string) (*compiler.Context, error) {
 	return &compiler.Context{
 		Raw: raw,
 		Workflow: compiler.WorkflowContext{
-			Mode:         mode,
-			WorkflowName: workflowName,
-			JobID:        snapshot.Run.ID,
-			UserID:       snapshot.Project.ID,
-			Executor:     snapshot.Execution.Executor.Value,
-			Backend:      snapshot.Execution.Backend.Value,
-			PDXMode:      pdxMode,
+			Mode:             mode,
+			WorkflowName:     workflowName,
+			JobID:            snapshot.Run.ID,
+			UserID:           snapshot.Project.ID,
+			Executor:         snapshot.Execution.Executor.Value,
+			Backend:          snapshot.Execution.Backend.Value,
+			Toolchain:        snapshot.Workflow.Toolchain,
+			LegacyExtensions: append([]string(nil), snapshot.Workflow.LegacyExtensions...),
+			PDXMode:          pdxMode,
+		},
+		Execution: compiler.ExecutionContext{
+			Slurm: compiler.SlurmExecutionContext{
+				Partition:   snapshot.Execution.Slurm.Partition.Value,
+				Account:     snapshot.Execution.Slurm.Account.Value,
+				QOS:         snapshot.Execution.Slurm.QOS.Value,
+				MaxJobs:     snapshot.Execution.Slurm.MaxJobs.Value,
+				DefaultTime: snapshot.Execution.Slurm.DefaultTime.Value,
+				ScratchRoot: snapshot.Execution.Slurm.ScratchRoot.Value,
+			},
 		},
 		Samples: samples,
 		Species: species,
@@ -138,11 +151,19 @@ func validateRunSnapshot(snapshot *runSnapshot) error {
 	if snapshot.Workflow.Toolchain != "modern" && snapshot.Workflow.Toolchain != "legacy-equivalent" {
 		return fmt.Errorf("workflow.toolchain %q is invalid", snapshot.Workflow.Toolchain)
 	}
+	if err := validateLegacyExtensions(snapshot.Workflow.LegacyExtensions); err != nil {
+		return err
+	}
 	if strings.TrimSpace(snapshot.Execution.Executor.Value) != "craftmake" {
 		return fmt.Errorf("execution.executor.value must be craftmake, got %q", snapshot.Execution.Executor.Value)
 	}
 	if snapshot.Execution.Backend.Value != "local" && snapshot.Execution.Backend.Value != "slurm" {
 		return fmt.Errorf("execution.backend.value must be local or slurm, got %q", snapshot.Execution.Backend.Value)
+	}
+	if snapshot.Execution.Backend.Value == "slurm" {
+		if err := validateResolvedSlurmResources(snapshot.Execution.Slurm); err != nil {
+			return fmt.Errorf("execution.slurm: %w", err)
+		}
 	}
 	for name, path := range map[string]string{
 		"run_root": snapshot.Paths.RunRoot,
@@ -199,10 +220,66 @@ func validateRunSnapshot(snapshot *runSnapshot) error {
 	return err
 }
 
+func validateLegacyExtensions(extensions []string) error {
+	allowedExtensions := map[string]bool{
+		"clubcpg":       true,
+		"mhap":          true,
+		"ccgg":          true,
+		"insert-length": true,
+	}
+	seenExtensions := make(map[string]bool, len(extensions))
+	for _, extension := range extensions {
+		if !allowedExtensions[extension] {
+			return fmt.Errorf("workflow legacy extension %q is invalid", extension)
+		}
+		if seenExtensions[extension] {
+			return fmt.Errorf("workflow legacy extension %q is duplicated", extension)
+		}
+		seenExtensions[extension] = true
+	}
+	return nil
+}
+
+func validateResolvedSlurmResources(resources resolvedSlurmResources) error {
+	if strings.TrimSpace(resources.Partition.Value) == "" || !isSnapshotValueSource(resources.Partition.Source) {
+		return fmt.Errorf("partition value and source are required")
+	}
+	if strings.TrimSpace(resources.Account.Value) == "" || !isSnapshotValueSource(resources.Account.Source) {
+		return fmt.Errorf("account value and source are required")
+	}
+	if resources.QOS.Value != "" && !isSnapshotValueSource(resources.QOS.Source) {
+		return fmt.Errorf("qos source is invalid")
+	}
+	if resources.MaxJobs.Value < 0 || !isSnapshotValueSource(resources.MaxJobs.Source) {
+		return fmt.Errorf("max_jobs value/source is invalid")
+	}
+	if resources.DefaultTime.Value != "" && !slurmTimePattern.MatchString(resources.DefaultTime.Value) {
+		return fmt.Errorf("default_time %q is invalid", resources.DefaultTime.Value)
+	}
+	if resources.DefaultTime.Value != "" && !isSnapshotValueSource(resources.DefaultTime.Source) {
+		return fmt.Errorf("default_time source is invalid")
+	}
+	if resources.ScratchRoot.Value != "" && (!filepath.IsAbs(resources.ScratchRoot.Value) || !isSnapshotValueSource(resources.ScratchRoot.Source)) {
+		return fmt.Errorf("scratch_root must be absolute and have a valid source")
+	}
+	return nil
+}
+
+func isSnapshotValueSource(source string) bool {
+	switch source {
+	case "default", "project", "cli", "profile", "detection":
+		return true
+	default:
+		return false
+	}
+}
+
 func workflowIdentity(scenario string) (string, string, bool, error) {
 	switch scenario {
-	case "rrbs", "wgbs":
+	case "rrbs":
 		return "BeaverBS", "RRBS", false, nil
+	case "wgbs":
+		return "BeaverBS", "WGBS", false, nil
 	case "rnaseq":
 		return "BeaverRNA", "RNASEQ", false, nil
 	case "bs-pdx":

@@ -468,6 +468,46 @@ func TestBuildScriptOverridesWorkflowPartition(t *testing.T) {
 	}
 }
 
+func TestBuildScriptIncludesConfiguredSlurmAllocation(t *testing.T) {
+	request := backend.SubmissionRequest{
+		SubmissionID: "run:resource-options",
+		Resources: protocol.ResourceRequest{
+			Cores:      2,
+			MemoryByte: 4 << 30,
+		},
+	}
+	workers := []preparedWorker{{
+		manifest: &protocol.TaskManifest{
+			TaskID:           "workflow/step/job/sample=A",
+			Resources:        protocol.ResourceRequest{Cores: 2, MemoryByte: 4 << 30},
+			RuntimeDirectory: "/state/task-a",
+		},
+		scriptPath: "/state/task-a/worker.sh",
+	}}
+
+	script, err := buildScriptWithOptions(request, workers, "/state/submission", scriptOptions{
+		Partition:   "compute",
+		Account:     "genomics",
+		QOS:         "normal",
+		DefaultTime: "2-01:02:03",
+		ScratchRoot: "/scratch/otter",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"#SBATCH --partition='compute'",
+		"#SBATCH --account='genomics'",
+		"#SBATCH --qos='normal'",
+		"#SBATCH --time='2-01:02:03'",
+		"export CRAFTMAKE_SCRATCH_ROOT='/scratch/otter'",
+	} {
+		if !strings.Contains(script, expected) {
+			t.Fatalf("script does not contain %q\\n%s", expected, script)
+		}
+	}
+}
+
 func TestBuildScriptCreatesExclusiveWorkerSteps(t *testing.T) {
 	request := backend.SubmissionRequest{
 		SubmissionID:      "run:batch-species-human",

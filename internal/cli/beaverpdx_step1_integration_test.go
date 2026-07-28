@@ -33,7 +33,7 @@ func TestBeaverPDXStep1RunsLocallyAndUsesCache(t *testing.T) {
 	)
 	firstRunID := outputValue(t, firstRunOutput, "run_id")
 	firstStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", firstRunID)
-	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 7") {
+	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 6") {
 		t.Fatalf("unexpected first BeaverPDX step1 status:\n%s", firstStatus)
 	}
 
@@ -44,11 +44,13 @@ func TestBeaverPDXStep1RunsLocallyAndUsesCache(t *testing.T) {
 		"workflow/trim/sample-b_val_2.fq.gz",
 		"workflow/fastqc_clean/sample-a_val_1_fastqcx/fastqc_data.txt",
 		"workflow/fastqc_clean/sample-b_val_2_fastqcx/fastqc_data.txt",
-		"workflow/log/step1_success.txt",
 	} {
 		if _, err := os.Stat(filepath.Join(projectDirectory, expectedOutput)); err != nil {
 			t.Fatalf("expected BeaverPDX output %q: %v", expectedOutput, err)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(projectDirectory, "workflow", "log", "step1_success.txt")); !os.IsNotExist(err) {
+		t.Fatalf("step1 must not generate a marker-only success file, stat error=%v", err)
 	}
 
 	secondRunOutput := runCraftmake(t, binaryPath, commandEnvironment,
@@ -63,7 +65,7 @@ func TestBeaverPDXStep1RunsLocallyAndUsesCache(t *testing.T) {
 	)
 	secondRunID := outputValue(t, secondRunOutput, "run_id")
 	secondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID)
-	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 7") {
+	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 6") {
 		t.Fatalf("unexpected cached BeaverPDX step1 status:\n%s", secondStatus)
 	}
 }

@@ -34,10 +34,67 @@ jobs:
       memory: 1G
       partition: cpu
     steps:
-      - name: Record validated RNA-seq PDX sample artifacts
+      - name: Write validated BeaverRNASEQPDX step3 artifact manifest
         run: |
-          mkdir -p "$(dirname '${{ outputs.ready }}')"
-          touch '${{ outputs.ready }}'
+          output_path='${{ outputs.ready }}'
+          mkdir -p "$(dirname "$output_path")"
+          temporary_path="$(mktemp "${output_path}.tmp.XXXXXX")"
+          trap 'rm -f "$temporary_path"' EXIT
+
+          ensure_json_safe_string() {
+            local value="$1"
+            if printf '%s' "$value" | LC_ALL=C grep -q '[[:cntrl:]"\\]'; then
+              printf 'validated artifact metadata contains unsupported JSON characters: %s\n' "$value" >&2
+              exit 1
+            fi
+          }
+
+          write_artifact() {
+            local artifact_id="$1" artifact_path="$2" media_type="$3"
+            ensure_json_safe_string "$artifact_id"
+            ensure_json_safe_string "$artifact_path"
+            ensure_json_safe_string "$media_type"
+            if [[ -L "$artifact_path" || ! -f "$artifact_path" ]]; then
+              printf 'validated artifact must be a regular non-symlink file: %s\n' "$artifact_path" >&2
+              exit 1
+            fi
+            local size_bytes sha256
+            size_bytes="$(wc -c < "$artifact_path" | tr -d '[:space:]')"
+            if [[ ! "$size_bytes" =~ ^[1-9][0-9]*$ ]]; then
+              printf 'validated artifact must be non-empty: %s\n' "$artifact_path" >&2
+              exit 1
+            fi
+            sha256="$(sha256sum -- "$artifact_path" | awk '{print $1}')"
+            if [[ ! "$sha256" =~ ^[a-f0-9]{64}$ ]]; then
+              printf 'could not calculate SHA-256 for validated artifact: %s\n' "$artifact_path" >&2
+              exit 1
+            fi
+            printf '{"id":"%s","path":"%s","media_type":"%s","size_bytes":%s,"sha256":"%s"}' \
+              "$artifact_id" "$artifact_path" "$media_type" "$size_bytes" "$sha256"
+          }
+
+          ensure_json_safe_string '${{ sample.id }}'
+          {
+            printf '{"schema_version":"otter.sample-artifacts-validation/v1","status":"validated","workflow":"BeaverRNASEQPDX","phase":"step3-check","sample_id":"%s","dimensions":{"sample":"%s"},"artifacts":[' '${{ sample.id }}' '${{ sample.id }}'
+            first_artifact=true
+            for artifact in \
+              "counts|${{ inputs.counts }}|text/plain" \
+              "filtered_bam|${{ inputs.filtered_bam }}|application/x-bam" \
+              "trim_report_r1|${{ inputs.trim_report_r1 }}|text/plain" \
+              "trim_report_r2|${{ inputs.trim_report_r2 }}|text/plain" \
+              "fastqc_before_r1|${{ inputs.fastqc_before_r1 }}|text/plain" \
+              "fastqc_before_r2|${{ inputs.fastqc_before_r2 }}|text/plain" \
+              "fastqc_after_r1|${{ inputs.fastqc_after_r1 }}|text/plain" \
+              "fastqc_after_r2|${{ inputs.fastqc_after_r2 }}|text/plain"; do
+              IFS='|' read -r artifact_id artifact_path media_type <<< "$artifact"
+              if ! "$first_artifact"; then printf ','; fi
+              write_artifact "$artifact_id" "$artifact_path" "$media_type"
+              first_artifact=false
+            done
+            printf ']}\n'
+          } > "$temporary_path"
+          mv -f "$temporary_path" "$output_path"
+          trap - EXIT
 
   species_qc_artifacts:
     name: Validate BeaverRNASEQPDX species mapping QC artifacts
@@ -53,10 +110,56 @@ jobs:
       memory: 1G
       partition: cpu
     steps:
-      - name: Record validated species QC artifacts
+      - name: Write validated BeaverRNASEQPDX species QC artifact manifest
         run: |
-          mkdir -p "$(dirname '${{ outputs.ready }}')"
-          touch '${{ outputs.ready }}'
+          output_path='${{ outputs.ready }}'
+          mkdir -p "$(dirname "$output_path")"
+          temporary_path="$(mktemp "${output_path}.tmp.XXXXXX")"
+          trap 'rm -f "$temporary_path"' EXIT
+
+          ensure_json_safe_string() {
+            local value="$1"
+            if printf '%s' "$value" | LC_ALL=C grep -q '[[:cntrl:]"\\]'; then
+              printf 'validated artifact metadata contains unsupported JSON characters: %s\n' "$value" >&2
+              exit 1
+            fi
+          }
+
+          write_artifact() {
+            local artifact_id="$1" artifact_path="$2" media_type="$3"
+            ensure_json_safe_string "$artifact_id"
+            ensure_json_safe_string "$artifact_path"
+            ensure_json_safe_string "$media_type"
+            if [[ -L "$artifact_path" || ! -f "$artifact_path" ]]; then
+              printf 'validated artifact must be a regular non-symlink file: %s\n' "$artifact_path" >&2
+              exit 1
+            fi
+            local size_bytes sha256
+            size_bytes="$(wc -c < "$artifact_path" | tr -d '[:space:]')"
+            if [[ ! "$size_bytes" =~ ^[1-9][0-9]*$ ]]; then
+              printf 'validated artifact must be non-empty: %s\n' "$artifact_path" >&2
+              exit 1
+            fi
+            sha256="$(sha256sum -- "$artifact_path" | awk '{print $1}')"
+            if [[ ! "$sha256" =~ ^[a-f0-9]{64}$ ]]; then
+              printf 'could not calculate SHA-256 for validated artifact: %s\n' "$artifact_path" >&2
+              exit 1
+            fi
+            printf '{"id":"%s","path":"%s","media_type":"%s","size_bytes":%s,"sha256":"%s"}' \
+              "$artifact_id" "$artifact_path" "$media_type" "$size_bytes" "$sha256"
+          }
+
+          ensure_json_safe_string '${{ sample.id }}'
+          ensure_json_safe_string '${{ species.name }}'
+          {
+            printf '{"schema_version":"otter.sample-artifacts-validation/v1","status":"validated","workflow":"BeaverRNASEQPDX","phase":"step3-check","sample_id":"%s","dimensions":{"sample":"%s","species":"%s"},"artifacts":[' '${{ sample.id }}' '${{ sample.id }}' '${{ species.name }}'
+            write_artifact 'sorted_bam' '${{ inputs.sorted_bam }}' 'application/x-bam'
+            printf ','
+            write_artifact 'qualimap_report' '${{ inputs.qualimap_report }}' 'text/html'
+            printf ']}\n'
+          } > "$temporary_path"
+          mv -f "$temporary_path" "$output_path"
+          trap - EXIT
 
   construct_expression_matrix:
     name: Construct BeaverRNASEQPDX expression matrices
@@ -113,26 +216,3 @@ jobs:
               yaml.safe_dump(configuration, output_file, sort_keys=False)
           PY
           qctb --config "$qctb_config" --output '${{ outputs.report }}' --rnaseq
-
-  step3_checker:
-    name: Check BeaverRNASEQPDX step3
-    scope: global
-    dimensions: []
-    inputs:
-      sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
-      species_qc_artifacts: "${{ jobs.species_qc_artifacts.outputs.ready }}"
-      count_matrix: "${{ jobs.construct_expression_matrix.outputs.count_matrix }}"
-      normalized_matrix: "${{ jobs.construct_expression_matrix.outputs.normalized_matrix }}"
-      splicing: "${{ config.directories.bsmap.main }}/RNASplicing/RNASplicing_success.txt"
-      qc_summary: "${{ jobs.qc_summary.outputs.report }}"
-    outputs:
-      success_marker: "${{ config.directories.sid_log }}/step3_success.txt"
-    resources:
-      cores: 5
-      memory: 2G
-      partition: cpu
-    steps:
-      - name: Write step3 success marker
-        run: |
-          mkdir -p "$(dirname '${{ outputs.success_marker }}')"
-          touch '${{ outputs.success_marker }}'

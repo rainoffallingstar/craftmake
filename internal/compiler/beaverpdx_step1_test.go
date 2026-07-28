@@ -29,8 +29,8 @@ func TestCompileBeaverPDXStep1Fixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Tasks) != 7 || len(plan.Submissions) != 7 {
-		t.Fatalf("expected seven tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
+	if len(plan.Tasks) != 6 || len(plan.Submissions) != 6 {
+		t.Fatalf("expected six tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
 	}
 
 	fastqcTask := plan.TaskByID["BeaverPDX/step1/fastqc_before/sample=sample-a"]
@@ -50,11 +50,10 @@ func TestCompileBeaverPDXStep1Fixture(t *testing.T) {
 	if fastqcAfterTask == nil || fastqcAfterTask.Outputs["read2_data"] != filepath.Join("workflow", "fastqc_clean", "sample-a_val_2_fastqcx", "fastqc_data.txt") {
 		t.Fatalf("unexpected PDX post-trim Fastqcx task: %#v", fastqcAfterTask)
 	}
-	checkerTask := plan.TaskByID["BeaverPDX/step1/step1_checker"]
-	if checkerTask == nil || len(checkerTask.Dependencies) != 6 {
-		t.Fatalf("PDX checker should depend on six sample tasks: %#v", checkerTask)
+	if plan.TaskByID["BeaverPDX/step1/step1_checker"] != nil {
+		t.Fatal("step1 must terminate in per-sample PDX QC and trimming artifacts, not a marker-only checker task")
 	}
-	if checkerTask.Outputs["success_marker"] != filepath.Join("workflow", "log", "step1_success.txt") {
-		t.Fatalf("unexpected PDX checker marker %q", checkerTask.Outputs["success_marker"])
+	if fastqcAfterTask.Outputs["read1_data"] != filepath.Join("workflow", "fastqc_clean", "sample-a_val_1_fastqcx", "fastqc_data.txt") {
+		t.Fatalf("unexpected PDX post-trim terminal output %q", fastqcAfterTask.Outputs["read1_data"])
 	}
 }

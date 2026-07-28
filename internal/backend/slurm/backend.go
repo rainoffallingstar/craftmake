@@ -24,6 +24,10 @@ type Backend struct {
 	PollInterval         time.Duration
 	RecoveryMissingLimit int
 	PartitionOverride    string
+	AccountOverride      string
+	QOSOverride          string
+	DefaultTimeOverride  string
+	ScratchRoot          string
 	SubmitMaxAttempts    int
 	SubmitInitialBackoff time.Duration
 	SubmitMaximumBackoff time.Duration
@@ -37,6 +41,14 @@ type preparedWorker struct {
 	manifestPath string
 	scriptPath   string
 	stepIDPath   string
+}
+
+type scriptOptions struct {
+	Partition   string
+	Account     string
+	QOS         string
+	DefaultTime string
+	ScratchRoot string
 }
 
 var errSlurmResultNotTerminal = errors.New("Slurm task result is not terminal")
@@ -102,7 +114,13 @@ func (slurmBackend *Backend) RunSubmission(ctx context.Context, executable strin
 	}
 
 	scriptPath := filepath.Join(submissionDirectory, "submission.sh")
-	script, err := buildScript(request, workers, submissionDirectory, slurmBackend.PartitionOverride)
+	script, err := buildScriptWithOptions(request, workers, submissionDirectory, scriptOptions{
+		Partition:   slurmBackend.PartitionOverride,
+		Account:     slurmBackend.AccountOverride,
+		QOS:         slurmBackend.QOSOverride,
+		DefaultTime: slurmBackend.DefaultTimeOverride,
+		ScratchRoot: slurmBackend.ScratchRoot,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -304,6 +322,10 @@ exec %s __task-runner --manifest %s
 }
 
 func buildScript(request backend.SubmissionRequest, workers []preparedWorker, submissionDirectory, partitionOverride string) (string, error) {
+	return buildScriptWithOptions(request, workers, submissionDirectory, scriptOptions{Partition: partitionOverride})
+}
+
+func buildScriptWithOptions(request backend.SubmissionRequest, workers []preparedWorker, submissionDirectory string, options scriptOptions) (string, error) {
 	if len(workers) == 0 {
 		return "", fmt.Errorf("cannot build a Slurm script without workers")
 	}
@@ -311,16 +333,29 @@ func buildScript(request backend.SubmissionRequest, workers []preparedWorker, su
 	if allocationResources.Cores <= 0 {
 		allocationResources.Cores = 1
 	}
-	if partitionOverride = strings.TrimSpace(partitionOverride); partitionOverride != "" {
-		allocationResources.Partition = partitionOverride
+	if options.Partition = strings.TrimSpace(options.Partition); options.Partition != "" {
+		allocationResources.Partition = options.Partition
 	}
-	partitionDirective := ""
+	var allocationDirectives strings.Builder
 	if allocationResources.Partition != "" {
-		partitionDirective = "#SBATCH --partition=" + shellValue(allocationResources.Partition) + "\n"
+		fmt.Fprintf(&allocationDirectives, "#SBATCH --partition=%s\n", shellValue(allocationResources.Partition))
 	}
-	timeLimit := allocationResources.Time
+	if options.Account = strings.TrimSpace(options.Account); options.Account != "" {
+		fmt.Fprintf(&allocationDirectives, "#SBATCH --account=%s\n", shellValue(options.Account))
+	}
+	if options.QOS = strings.TrimSpace(options.QOS); options.QOS != "" {
+		fmt.Fprintf(&allocationDirectives, "#SBATCH --qos=%s\n", shellValue(options.QOS))
+	}
+	timeLimit := strings.TrimSpace(options.DefaultTime)
+	if timeLimit == "" {
+		timeLimit = allocationResources.Time
+	}
 	if timeLimit == "" {
 		timeLimit = "24:00:00"
+	}
+	scratchExport := ""
+	if options.ScratchRoot = strings.TrimSpace(options.ScratchRoot); options.ScratchRoot != "" {
+		scratchExport = "export CRAFTMAKE_SCRATCH_ROOT=" + shellValue(options.ScratchRoot) + "\n"
 	}
 	maximumParallelWorkers := request.WorkerMaxParallel
 	if maximumParallelWorkers <= 0 || maximumParallelWorkers > len(workers) {
@@ -338,7 +373,7 @@ func buildScript(request backend.SubmissionRequest, workers []preparedWorker, su
 #SBATCH --output=%s
 #SBATCH --error=%s
 set -uo pipefail
-maximum_parallel_workers=%d
+%smaximum_parallel_workers=%d
 active_worker_pids=()
 run_worker_with_retry() {
     local task_id="$1"
@@ -386,7 +421,7 @@ wait_for_oldest_worker() {
     wait "${oldest_worker_pid}" || true
     active_worker_pids=("${active_worker_pids[@]:1}")
 }
-`, shellValue(shortJobName(request.SubmissionID)), partitionDirective, allocationResources.Cores, metrics.FormatSlurmMemory(allocationResources.MemoryByte), shellValue(timeLimit), shellValue(filepath.Join(submissionDirectory, "slurm-%j.out")), shellValue(filepath.Join(submissionDirectory, "slurm-%j.err")), maximumParallelWorkers)
+`, shellValue(shortJobName(request.SubmissionID)), allocationDirectives.String(), allocationResources.Cores, metrics.FormatSlurmMemory(allocationResources.MemoryByte), shellValue(timeLimit), shellValue(filepath.Join(submissionDirectory, "slurm-%j.out")), shellValue(filepath.Join(submissionDirectory, "slurm-%j.err")), scratchExport, maximumParallelWorkers)
 
 	for _, worker := range workers {
 		workerResources := worker.manifest.Resources

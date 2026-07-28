@@ -24,8 +24,8 @@ func TestCompileBeaverBSStep3CheckFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Tasks) != 9 || len(plan.Submissions) != 9 {
-		t.Fatalf("expected nine tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
+	if len(plan.Tasks) != 8 || len(plan.Submissions) != 8 {
+		t.Fatalf("expected eight tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
 	}
 
 	firstArtifactTask := plan.TaskByID["BeaverBS/step3-check/sample_artifacts/sample=sample-a"]
@@ -38,6 +38,17 @@ func TestCompileBeaverBSStep3CheckFixture(t *testing.T) {
 	if firstArtifactTask.Inputs["fastqc_before_r1"][0] != filepath.Join("workflow", "fastqc_raw", "sample-a_R1_fastqcx", "fastqc_data.txt") ||
 		firstArtifactTask.Inputs["fastqc_after_r2"][0] != filepath.Join("workflow", "fastqc_clean", "sample-a_val_2_fastqcx", "fastqc_data.txt") {
 		t.Fatalf("unexpected Fastqcx artifact inputs: %#v", firstArtifactTask.Inputs)
+	}
+	validationCommand := firstArtifactTask.Steps[0].Command
+	for _, requiredFragment := range []string{
+		"otter.sample-artifacts-validation/v1",
+		"sha256sum",
+		"mktemp",
+		"regular non-symlink file",
+	} {
+		if !strings.Contains(validationCommand, requiredFragment) {
+			t.Fatalf("sample validation manifest command does not contain %q:\n%s", requiredFragment, validationCommand)
+		}
 	}
 
 	prepareReferenceTask := plan.TaskByID["BeaverBS/step3-check/prepare_methrix_reference"]
@@ -74,14 +85,17 @@ func TestCompileBeaverBSStep3CheckFixture(t *testing.T) {
 		t.Fatalf("Bismark summary should aggregate both sample reports: %#v", bismarkSummaryTask)
 	}
 
-	checkerTask := plan.TaskByID["BeaverBS/step3-check/step3_checker"]
-	if checkerTask == nil {
-		t.Fatal("missing step3 checker task")
+	qcSummaryTask := plan.TaskByID["BeaverBS/step3-check/qc_summary"]
+	if qcSummaryTask == nil || len(qcSummaryTask.Inputs["sample_artifacts"]) != 2 || len(qcSummaryTask.Dependencies) != 3 {
+		t.Fatalf("unexpected QC summary aggregation: %#v", qcSummaryTask)
 	}
-	if len(checkerTask.Inputs["sample_artifacts"]) != 2 || len(checkerTask.Dependencies) != 5 {
-		t.Fatalf("unexpected checker aggregation: inputs=%#v dependencies=%#v", checkerTask.Inputs, checkerTask.Dependencies)
+	if plan.TaskByID["BeaverBS/step3-check/step3_checker"] != nil {
+		t.Fatal("step3-check must terminate in analysis artifacts, not a marker-only checker task")
 	}
-	if checkerTask.Outputs["success_marker"] != filepath.Join("workflow", "log", "step3_success.txt") {
-		t.Fatalf("unexpected step3 success marker %q", checkerTask.Outputs["success_marker"])
+	if bismarkSummaryTask.Outputs["report"] != filepath.Join("workflow", "bsmap", "human", "bismark_summary_report.html") {
+		t.Fatalf("unexpected Bismark summary terminal output: %#v", bismarkSummaryTask.Outputs)
+	}
+	if qcSummaryTask.Outputs["report"] != filepath.Join("workflow", "QC", "summary", "qc_summary.xlsx") {
+		t.Fatalf("unexpected QC terminal output: %#v", qcSummaryTask.Outputs)
 	}
 }

@@ -24,8 +24,8 @@ func TestCompileBeaverRNASEQPDXStep3CheckFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Tasks) != 9 || len(plan.Submissions) != 9 {
-		t.Fatalf("expected nine tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
+	if len(plan.Tasks) != 8 || len(plan.Submissions) != 8 {
+		t.Fatalf("expected eight tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
 	}
 
 	sampleTask := plan.TaskByID["BeaverRNASEQPDX/step3-check/sample_artifacts/sample=sample-a"]
@@ -42,6 +42,17 @@ func TestCompileBeaverRNASEQPDXStep3CheckFixture(t *testing.T) {
 		sampleTask.Inputs["fastqc_after_r2"][0] != filepath.Join("workflow", "fastqc_clean", "sample-a_val_2_fastqcx", "fastqc_data.txt") {
 		t.Fatalf("unexpected RNA-seq PDX Fastqcx artifact inputs: %#v", sampleTask.Inputs)
 	}
+	for _, requiredFragment := range []string{
+		"otter.sample-artifacts-validation/v1",
+		"counts",
+		"filtered_bam",
+		"sha256sum",
+		"regular non-symlink file",
+	} {
+		if !strings.Contains(sampleTask.Steps[0].Command, requiredFragment) {
+			t.Fatalf("RNA-seq PDX sample validation command does not contain %q:\n%s", requiredFragment, sampleTask.Steps[0].Command)
+		}
+	}
 
 	speciesTask := plan.TaskByID["BeaverRNASEQPDX/step3-check/species_qc_artifacts/sample=sample-b/species=mouse"]
 	if speciesTask == nil || len(speciesTask.Inputs) != 2 {
@@ -49,6 +60,16 @@ func TestCompileBeaverRNASEQPDXStep3CheckFixture(t *testing.T) {
 	}
 	if speciesTask.Inputs["sorted_bam"][0] != filepath.Join("workflow", "bsmap", "sample-b_mouse.bam") {
 		t.Fatalf("unexpected mouse mapping BAM input: %#v", speciesTask.Inputs["sorted_bam"])
+	}
+	for _, requiredFragment := range []string{
+		"otter.sample-artifacts-validation/v1",
+		"sorted_bam",
+		"qualimap_report",
+		"sha256sum",
+	} {
+		if !strings.Contains(speciesTask.Steps[0].Command, requiredFragment) {
+			t.Fatalf("RNA-seq PDX species validation command does not contain %q:\n%s", requiredFragment, speciesTask.Steps[0].Command)
+		}
 	}
 
 	matrixTask := plan.TaskByID["BeaverRNASEQPDX/step3-check/construct_expression_matrix"]
@@ -70,14 +91,14 @@ func TestCompileBeaverRNASEQPDXStep3CheckFixture(t *testing.T) {
 		t.Fatalf("RNA-seq PDX QC command does not create a task-local QCTB compatibility config: %q", qcSummaryTask.Steps[0].Command)
 	}
 
-	checkerTask := plan.TaskByID["BeaverRNASEQPDX/step3-check/step3_checker"]
-	if checkerTask == nil || len(checkerTask.Dependencies) != 8 {
-		t.Fatalf("unexpected RNA-seq PDX final checker aggregation: %#v", checkerTask)
+	if plan.TaskByID["BeaverRNASEQPDX/step3-check/step3_checker"] != nil {
+		t.Fatal("step3-check must terminate in RNA-seq PDX analysis artifacts, not a marker-only checker task")
 	}
-	if checkerTask.Inputs["splicing"][0] != filepath.Join("workflow", "bsmap", "RNASplicing", "RNASplicing_success.txt") {
-		t.Fatalf("unexpected splicing marker input: %#v", checkerTask.Inputs["splicing"])
+	if matrixTask.Outputs["count_matrix"] != filepath.Join("workflow", "expression", "matrix", "matrix_count.txt") ||
+		matrixTask.Outputs["normalized_matrix"] != filepath.Join("workflow", "expression", "matrix", "matrix_norm.txt") {
+		t.Fatalf("unexpected RNA-seq PDX matrix terminal outputs: %#v", matrixTask.Outputs)
 	}
-	if checkerTask.Outputs["success_marker"] != filepath.Join("workflow", "log", "step3_success.txt") {
-		t.Fatalf("unexpected RNA-seq PDX step3 marker %q", checkerTask.Outputs["success_marker"])
+	if qcSummaryTask.Outputs["report"] != filepath.Join("workflow", "QC", "summary", "qc_summary.xlsx") {
+		t.Fatalf("unexpected RNA-seq PDX QC terminal output: %#v", qcSummaryTask.Outputs)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -16,6 +17,12 @@ func TestLoadRunV1BuildsCompilerContext(t *testing.T) {
 	}
 	if context.Workflow.WorkflowName != "BeaverRNASEQPDX" || context.Workflow.Mode != "RNASEQ" || !context.Workflow.PDXMode {
 		t.Fatalf("unexpected workflow context: %#v", context.Workflow)
+	}
+	if context.Workflow.Toolchain != "modern" || len(context.Workflow.LegacyExtensions) != 0 {
+		t.Fatalf("unexpected workflow toolchain context: %#v", context.Workflow)
+	}
+	if context.Execution.Slurm.Partition != "compute" || context.Execution.Slurm.Account != "genomics" || context.Execution.Slurm.QOS != "normal" || context.Execution.Slurm.MaxJobs != 4 || context.Execution.Slurm.DefaultTime != "2-00:00:00" || context.Execution.Slurm.ScratchRoot != "/scratch/otter" {
+		t.Fatalf("unexpected resolved Slurm execution context: %#v", context.Execution.Slurm)
 	}
 	if len(context.Samples) != 1 || context.Samples[0].Read1 != "/project/data/S01_R1.fastq.gz" || context.Samples[0].Adapter1 != "AUTO" {
 		t.Fatalf("unexpected sample context: %#v", context.Samples)
@@ -41,16 +48,34 @@ func TestLoadRunV1BuildsCompilerContext(t *testing.T) {
 	}
 }
 
+func TestLoadRunV1PreservesLegacyEquivalentToolchainContract(t *testing.T) {
+	configuration := strings.Replace(
+		runSnapshotYAML("rrbs", "craftmake", "local", "true", false),
+		"  toolchain: modern",
+		"  toolchain: legacy-equivalent\n  legacy_extensions: [ccgg, insert-length]",
+		1,
+	)
+	context, err := Load(writeRunSnapshot(t, configuration))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context.Workflow.Toolchain != "legacy-equivalent" ||
+		!slices.Equal(context.Workflow.LegacyExtensions, []string{"ccgg", "insert-length"}) {
+		t.Fatalf("unexpected legacy-equivalent workflow context: %#v", context.Workflow)
+	}
+}
+
 func TestLoadRunV1MapsCatalogScenarios(t *testing.T) {
 	testCases := []struct {
 		scenario string
 		workflow string
+		mode     string
 	}{
-		{scenario: "rrbs", workflow: "BeaverBS"},
-		{scenario: "wgbs", workflow: "BeaverBS"},
-		{scenario: "rnaseq", workflow: "BeaverRNA"},
-		{scenario: "bs-pdx", workflow: "BeaverPDX"},
-		{scenario: "rna-pdx", workflow: "BeaverRNASEQPDX"},
+		{scenario: "rrbs", workflow: "BeaverBS", mode: "RRBS"},
+		{scenario: "wgbs", workflow: "BeaverBS", mode: "WGBS"},
+		{scenario: "rnaseq", workflow: "BeaverRNA", mode: "RNASEQ"},
+		{scenario: "bs-pdx", workflow: "BeaverPDX", mode: "RRBS"},
+		{scenario: "rna-pdx", workflow: "BeaverRNASEQPDX", mode: "RNASEQ"},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.scenario, func(t *testing.T) {
@@ -59,8 +84,8 @@ func TestLoadRunV1MapsCatalogScenarios(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if context.Workflow.WorkflowName != testCase.workflow {
-				t.Fatalf("scenario %q resolved to %q", testCase.scenario, context.Workflow.WorkflowName)
+			if context.Workflow.WorkflowName != testCase.workflow || context.Workflow.Mode != testCase.mode {
+				t.Fatalf("scenario %q resolved to workflow=%q mode=%q", testCase.scenario, context.Workflow.WorkflowName, context.Workflow.Mode)
 			}
 		})
 	}
@@ -80,6 +105,8 @@ func TestLoadRunV1RejectsInvalidContracts(t *testing.T) {
 		{name: "auto backend", configuration: strings.Replace(base, "value: local", "value: auto", 1), want: "backend"},
 		{name: "samples", configuration: strings.Replace(base, "samples:\n  - id: S01\n    r1: /project/data/S01_R1.fastq.gz\n    r2: /project/data/S01_R2.fastq.gz\n    adapter_r1: AUTO\n    adapter_r2: AUTO", "samples: []", 1), want: "samples"},
 		{name: "unknown field", configuration: base + "unexpected: true\n", want: "field unexpected not found"},
+		{name: "invalid legacy extension", configuration: strings.Replace(base, "  asset_root: /project/workflows", "  asset_root: /project/workflows\n  legacy_extensions: [unsupported]", 1), want: "legacy extension"},
+		{name: "duplicated legacy extension", configuration: strings.Replace(base, "  asset_root: /project/workflows", "  asset_root: /project/workflows\n  legacy_extensions: [ccgg, ccgg]", 1), want: "duplicated"},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -127,6 +154,16 @@ func runSnapshotYAML(scenario, executor, backend, immutable string, includeHost 
 	if includeHost {
 		primaryRole = "graft"
 	}
+	slurmResources := ""
+	if backend == "slurm" {
+		slurmResources = "  slurm:\n" +
+			"    partition:\n      value: compute\n      source: profile\n" +
+			"    account:\n      value: genomics\n      source: profile\n" +
+			"    qos:\n      value: normal\n      source: profile\n" +
+			"    max_jobs:\n      value: 4\n      source: profile\n" +
+			"    default_time:\n      value: 2-00:00:00\n      source: profile\n" +
+			"    scratch_root:\n      value: /scratch/otter\n      source: profile\n"
+	}
 	return fmt.Sprintf(`schema_version: otter.run/v1
 run:
   id: run-20260726T000000Z-abcdef
@@ -151,7 +188,7 @@ execution:
     value: local
     source: project
   resources: {}
-samples:
+%ssamples:
   - id: S01
     r1: /project/data/S01_R1.fastq.gz
     r2: /project/data/S01_R2.fastq.gz
@@ -197,5 +234,5 @@ digests:
   workflow_assets: sha256:8888888888888888888888888888888888888888888888888888888888888888
 observability: {}
 parity: {}
-`, immutable, scenario, executor, backend, primaryRole, hostReference)
+`, immutable, scenario, executor, backend, slurmResources, primaryRole, hostReference)
 }

@@ -1,6 +1,9 @@
 package cli_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,7 +36,7 @@ func TestBeaverRNAStep2CheckRunsLocallyAndUsesCache(t *testing.T) {
 	)
 	firstRunID := outputValue(t, firstRunOutput, "run_id")
 	firstStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", firstRunID)
-	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 6") {
+	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 5") {
 		t.Fatalf("unexpected first BeaverRNA step2-check status:\n%s", firstStatus)
 	}
 
@@ -42,20 +45,25 @@ func TestBeaverRNAStep2CheckRunsLocallyAndUsesCache(t *testing.T) {
 		"workflow/log/step2-check/sample-b_human.ready",
 		"workflow/expression/matrix/matrix_count.txt",
 		"workflow/expression/matrix/matrix_norm.txt",
-		"workflow/bsmap/RNASplicing/RNASplicing_success.txt",
+		"workflow/bsmap/RNASplicing/splicing-outcome.json",
+		"workflow/bsmap/RNASplicing/events.tsv",
 		"workflow/QC/summary/qc_summary.xlsx",
-		"workflow/log/step2_success.txt",
 	} {
 		if _, err := os.Stat(filepath.Join(projectDirectory, expectedOutput)); err != nil {
 			t.Fatalf("expected BeaverRNA step2-check output %q: %v", expectedOutput, err)
 		}
 	}
-	splicingMarker, err := os.ReadFile(filepath.Join(projectDirectory, "workflow", "bsmap", "RNASplicing", "RNASplicing_success.txt"))
+	assertBeaverRNAStep2ValidationManifest(t, projectDirectory, "sample-a")
+	assertBeaverRNAStep2ValidationManifest(t, projectDirectory, "sample-b")
+	if _, err := os.Stat(filepath.Join(projectDirectory, "workflow", "log", "step2_success.txt")); !os.IsNotExist(err) {
+		t.Fatalf("step2-check must not generate a marker-only success file, stat error=%v", err)
+	}
+	splicingOutcome, err := os.ReadFile(filepath.Join(projectDirectory, "workflow", "bsmap", "RNASplicing", "splicing-outcome.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(string(splicingMarker)) != "RNASplicing_DONE" {
-		t.Fatalf("unexpected RNA splicing marker %q", splicingMarker)
+	if !strings.Contains(string(splicingOutcome), `"status": "produced"`) || !strings.Contains(string(splicingOutcome), `"events.tsv"`) {
+		t.Fatalf("unexpected RNA splicing outcome %q", splicingOutcome)
 	}
 
 	secondRunOutput := runCraftmake(t, binaryPath, commandEnvironment,
@@ -70,8 +78,65 @@ func TestBeaverRNAStep2CheckRunsLocallyAndUsesCache(t *testing.T) {
 	)
 	secondRunID := outputValue(t, secondRunOutput, "run_id")
 	secondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID)
-	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 6") {
+	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 5") {
 		t.Fatalf("unexpected cached BeaverRNA step2-check status:\n%s", secondStatus)
+	}
+}
+
+func assertBeaverRNAStep2ValidationManifest(t *testing.T, projectDirectory string, sampleID string) {
+	t.Helper()
+	manifestPath := filepath.Join(projectDirectory, "workflow", "log", "step2-check", sampleID+"_human.ready")
+	manifestData, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read BeaverRNA step2 validation manifest %q: %v", manifestPath, err)
+	}
+
+	var manifest sampleArtifactValidationManifest
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		t.Fatalf("parse BeaverRNA step2 validation manifest %q: %v\n%s", manifestPath, err, manifestData)
+	}
+	if manifest.SchemaVersion != "otter.sample-artifacts-validation/v1" ||
+		manifest.Status != "validated" ||
+		manifest.Workflow != "BeaverRNA" ||
+		manifest.Phase != "step2-check" ||
+		manifest.SampleID != sampleID ||
+		manifest.Dimensions["sample"] != sampleID ||
+		manifest.Dimensions["species"] != "human" ||
+		len(manifest.Dimensions) != 2 {
+		t.Fatalf("unexpected BeaverRNA step2 validation manifest identity: %#v", manifest)
+	}
+
+	expectedArtifacts := map[string]string{
+		"counts":           filepath.Join("workflow", "expression", sampleID+"_human.txt"),
+		"sorted_bam":       filepath.Join("workflow", "bsmap", sampleID+"_human.bam"),
+		"qualimap_report":  filepath.Join("workflow", "QC", "qualimap", sampleID+"_human", "qualimapReport.html"),
+		"trim_report_r1":   filepath.Join("workflow", "trim", sampleID+"_R1.fastq.gz_trimming_report.txt"),
+		"trim_report_r2":   filepath.Join("workflow", "trim", sampleID+"_R2.fastq.gz_trimming_report.txt"),
+		"fastqc_before_r1": filepath.Join("workflow", "fastqc_raw", sampleID+"_R1_fastqcx", "fastqc_data.txt"),
+		"fastqc_before_r2": filepath.Join("workflow", "fastqc_raw", sampleID+"_R2_fastqcx", "fastqc_data.txt"),
+		"fastqc_after_r1":  filepath.Join("workflow", "fastqc_clean", sampleID+"_val_1_fastqcx", "fastqc_data.txt"),
+		"fastqc_after_r2":  filepath.Join("workflow", "fastqc_clean", sampleID+"_val_2_fastqcx", "fastqc_data.txt"),
+	}
+	if len(manifest.Artifacts) != len(expectedArtifacts) {
+		t.Fatalf("expected %d BeaverRNA step2 validation artifacts, got %#v", len(expectedArtifacts), manifest.Artifacts)
+	}
+	for _, artifact := range manifest.Artifacts {
+		expectedPath, knownArtifact := expectedArtifacts[artifact.ID]
+		if !knownArtifact || artifact.Path != expectedPath || artifact.MediaType == "" || artifact.SizeBytes <= 0 {
+			t.Fatalf("unexpected BeaverRNA step2 validation artifact: %#v", artifact)
+		}
+		artifactData, err := os.ReadFile(filepath.Join(projectDirectory, artifact.Path))
+		if err != nil {
+			t.Fatalf("read validated BeaverRNA step2 artifact %q: %v", artifact.Path, err)
+		}
+		digest := sha256.Sum256(artifactData)
+		if artifact.SHA256 != hex.EncodeToString(digest[:]) || artifact.SizeBytes != int64(len(artifactData)) {
+			t.Fatalf("BeaverRNA step2 validation digest or size does not match %q", artifact.Path)
+		}
+		delete(expectedArtifacts, artifact.ID)
+	}
+	if len(expectedArtifacts) != 0 {
+		t.Fatalf("BeaverRNA step2 validation manifest omitted artifacts: %#v", expectedArtifacts)
 	}
 }
 
@@ -96,12 +161,17 @@ printf 'normalized matrix\n' > "$output_directory/matrix_norm.txt"
 set -euo pipefail
 if [ "$1" != "run" ]; then exit 2; fi
 shift
+root_directory=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --root|--threads|--pdata|--seqlengthQC|--gtf|--pdxmode) shift 2 ;;
+    --root) root_directory="$2"; shift 2 ;;
+    --threads|--pdata|--seqlengthQC|--gtf|--pdxmode) shift 2 ;;
     *) shift ;;
   esac
 done
+if [ ! -d "$root_directory" ]; then exit 3; fi
+mkdir -p "$root_directory/RNASplicing"
+printf 'event\tvalue\nSE\t1\n' > "$root_directory/RNASplicing/events.tsv"
 `)
 }
 

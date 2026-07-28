@@ -1,6 +1,9 @@
 package cli_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,30 +40,44 @@ func TestBeaverRNASEQPDXStep2CheckRunsLocallyAndUsesCache(t *testing.T) {
 	)
 	firstRunID := outputValue(t, firstRunOutput, "run_id")
 	firstStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", firstRunID)
-	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 12") {
+	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 9") {
 		t.Fatalf("unexpected first BeaverRNASEQPDX step2-check status:\n%s", firstStatus)
 	}
 
 	expectedOutputs := []string{
-		"workflow/bsmap/Filtered_bams/filtered_success.txt",
-		"workflow/log/step2_success.txt",
+		"workflow/bsmap/Filtered_bams/filtered-bam-validation.json",
 	}
 	for _, sampleID := range []string{"sample-a", "sample-b"} {
 		expectedOutputs = append(expectedOutputs,
 			filepath.Join("workflow", "bsmap", "Filtered_bams", sampleID+"_fixed_human_Filtered.bam"),
-			filepath.Join("workflow", "log", "step2-check", sampleID+"_filtered.ready"),
+			filepath.Join("workflow", "bsmap", "Filtered_bams", sampleID+"_fixed_human_Filtered.bam.bai"),
 		)
 		for _, speciesName := range []string{"human", "mouse"} {
 			expectedOutputs = append(expectedOutputs,
 				filepath.Join("workflow", "log", "step2-check", sampleID+"_"+speciesName+".ready"),
 				filepath.Join("workflow", "bsmap", sampleID+"_fixed_"+speciesName+".bam"),
-				filepath.Join("workflow", "bsmap", sampleID+"_"+speciesName+"_pdx_patch_success"),
 			)
 		}
 	}
 	for _, expectedOutput := range expectedOutputs {
 		if _, err := os.Stat(filepath.Join(projectDirectory, expectedOutput)); err != nil {
 			t.Fatalf("expected BeaverRNASEQPDX step2-check output %q: %v", expectedOutput, err)
+		}
+	}
+	assertRNASEQPDXFilteredBAMValidationManifest(t, projectDirectory)
+	for _, sampleID := range []string{"sample-a", "sample-b"} {
+		for _, speciesName := range []string{"human", "mouse"} {
+			assertRNASEQPDXSampleValidationManifest(t, projectDirectory, sampleID, speciesName)
+		}
+	}
+	for _, obsoleteMarker := range []string{
+		filepath.Join("workflow", "bsmap", "Filtered_bams", "filtered_success.txt"),
+		filepath.Join("workflow", "log", "step2_success.txt"),
+		filepath.Join("workflow", "log", "step2-check", "sample-a_filtered.ready"),
+		filepath.Join("workflow", "bsmap", "sample-a_human_pdx_patch_success"),
+	} {
+		if _, err := os.Stat(filepath.Join(projectDirectory, obsoleteMarker)); !os.IsNotExist(err) {
+			t.Fatalf("step2-check must not generate marker-only output %q, stat error=%v", obsoleteMarker, err)
 		}
 	}
 
@@ -76,7 +93,7 @@ func TestBeaverRNASEQPDXStep2CheckRunsLocallyAndUsesCache(t *testing.T) {
 	)
 	secondRunID := outputValue(t, secondRunOutput, "run_id")
 	secondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID)
-	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 12") {
+	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 9") {
 		t.Fatalf("unexpected cached BeaverRNASEQPDX step2-check status:\n%s", secondStatus)
 	}
 }
@@ -248,5 +265,133 @@ reference:
 `
 	if err := os.WriteFile(filepath.Join(projectDirectory, "config.yaml"), []byte(configuration), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type filteredBAMValidationManifest struct {
+	SchemaVersion string                          `json:"schema_version"`
+	Status        string                          `json:"status"`
+	Workflow      string                          `json:"workflow"`
+	Phase         string                          `json:"phase"`
+	GraftSpecies  string                          `json:"graft_species"`
+	Artifacts     []filteredBAMValidationArtifact `json:"artifacts"`
+}
+
+type filteredBAMValidationArtifact struct {
+	SampleID        string `json:"sample_id"`
+	BAMPath         string `json:"bam_path"`
+	BAMSizeBytes    int64  `json:"bam_size_bytes"`
+	BAMSHA256       string `json:"bam_sha256"`
+	BAIPath         string `json:"bai_path"`
+	BAISizeBytes    int64  `json:"bai_size_bytes"`
+	BAISHA256       string `json:"bai_sha256"`
+	MappedReadCount int64  `json:"mapped_read_count"`
+}
+
+func assertRNASEQPDXFilteredBAMValidationManifest(t *testing.T, projectDirectory string) {
+	t.Helper()
+	manifestPath := filepath.Join(projectDirectory, "workflow", "bsmap", "Filtered_bams", "filtered-bam-validation.json")
+	manifestData, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read filtered BAM validation manifest %q: %v", manifestPath, err)
+	}
+
+	var manifest filteredBAMValidationManifest
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		t.Fatalf("parse filtered BAM validation manifest %q: %v\n%s", manifestPath, err, manifestData)
+	}
+	if manifest.SchemaVersion != "otter.filtered-bam-validation/v1" ||
+		manifest.Status != "validated" ||
+		manifest.Workflow != "BeaverRNASEQPDX" ||
+		manifest.Phase != "step2-check" ||
+		manifest.GraftSpecies != "human" {
+		t.Fatalf("unexpected filtered BAM validation manifest identity: %#v", manifest)
+	}
+
+	expectedSampleIDs := map[string]struct{}{"sample-a": {}, "sample-b": {}}
+	if len(manifest.Artifacts) != len(expectedSampleIDs) {
+		t.Fatalf("expected %d filtered BAM entries, got %#v", len(expectedSampleIDs), manifest.Artifacts)
+	}
+	for _, artifact := range manifest.Artifacts {
+		if _, knownSample := expectedSampleIDs[artifact.SampleID]; !knownSample {
+			t.Fatalf("unexpected filtered BAM validation entry: %#v", artifact)
+		}
+		expectedBAMPath := filepath.Join("workflow", "bsmap", "Filtered_bams", artifact.SampleID+"_fixed_human_Filtered.bam")
+		if artifact.BAMPath != expectedBAMPath || artifact.BAIPath != expectedBAMPath+".bai" || artifact.BAMSizeBytes <= 0 || artifact.BAISizeBytes <= 0 || artifact.MappedReadCount <= 0 {
+			t.Fatalf("unexpected filtered BAM validation artifact metadata: %#v", artifact)
+		}
+		for _, fileMetadata := range []struct {
+			path     string
+			size     int64
+			checksum string
+		}{
+			{artifact.BAMPath, artifact.BAMSizeBytes, artifact.BAMSHA256},
+			{artifact.BAIPath, artifact.BAISizeBytes, artifact.BAISHA256},
+		} {
+			fileData, err := os.ReadFile(filepath.Join(projectDirectory, fileMetadata.path))
+			if err != nil {
+				t.Fatalf("read validated filtered BAM artifact %q: %v", fileMetadata.path, err)
+			}
+			digest := sha256.Sum256(fileData)
+			if fileMetadata.size != int64(len(fileData)) || fileMetadata.checksum != hex.EncodeToString(digest[:]) {
+				t.Fatalf("filtered BAM validation digest or size does not match %q", fileMetadata.path)
+			}
+		}
+		delete(expectedSampleIDs, artifact.SampleID)
+	}
+	if len(expectedSampleIDs) != 0 {
+		t.Fatalf("filtered BAM validation manifest omitted samples: %#v", expectedSampleIDs)
+	}
+}
+
+func assertRNASEQPDXSampleValidationManifest(t *testing.T, projectDirectory string, sampleID string, speciesName string) {
+	t.Helper()
+	manifestPath := filepath.Join(projectDirectory, "workflow", "log", "step2-check", sampleID+"_"+speciesName+".ready")
+	manifestData, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read RNA-PDX sample validation manifest %q: %v", manifestPath, err)
+	}
+
+	var manifest sampleArtifactValidationManifest
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		t.Fatalf("parse RNA-PDX sample validation manifest %q: %v\n%s", manifestPath, err, manifestData)
+	}
+	if manifest.SchemaVersion != "otter.sample-artifacts-validation/v1" ||
+		manifest.Status != "validated" ||
+		manifest.Workflow != "BeaverRNASEQPDX" ||
+		manifest.Phase != "step2-check" ||
+		manifest.SampleID != sampleID ||
+		manifest.Dimensions["sample"] != sampleID ||
+		manifest.Dimensions["species"] != speciesName ||
+		len(manifest.Dimensions) != 2 {
+		t.Fatalf("unexpected RNA-PDX sample validation manifest identity: %#v", manifest)
+	}
+
+	expectedArtifacts := map[string]string{
+		"bam":           filepath.Join("workflow", "bsmap", sampleID+"_"+speciesName+".bam"),
+		"bam_index":     filepath.Join("workflow", "bsmap", sampleID+"_"+speciesName+".bam.bai"),
+		"qualimap_html": filepath.Join("workflow", "QC", "qualimap", sampleID+"_"+speciesName, "qualimapReport.html"),
+		"qualimap_pdf":  filepath.Join("workflow", "QC", "qualimap", sampleID+"_"+speciesName, "report.pdf"),
+	}
+	if len(manifest.Artifacts) != len(expectedArtifacts) {
+		t.Fatalf("expected %d RNA-PDX sample validation artifacts, got %#v", len(expectedArtifacts), manifest.Artifacts)
+	}
+	for _, artifact := range manifest.Artifacts {
+		expectedPath, knownArtifact := expectedArtifacts[artifact.ID]
+		if !knownArtifact || artifact.Path != expectedPath || artifact.MediaType == "" || artifact.SizeBytes <= 0 {
+			t.Fatalf("unexpected RNA-PDX sample validation artifact: %#v", artifact)
+		}
+		artifactData, err := os.ReadFile(filepath.Join(projectDirectory, artifact.Path))
+		if err != nil {
+			t.Fatalf("read validated RNA-PDX sample artifact %q: %v", artifact.Path, err)
+		}
+		digest := sha256.Sum256(artifactData)
+		if artifact.SHA256 != hex.EncodeToString(digest[:]) || artifact.SizeBytes != int64(len(artifactData)) {
+			t.Fatalf("RNA-PDX sample validation digest or size does not match %q", artifact.Path)
+		}
+		delete(expectedArtifacts, artifact.ID)
+	}
+	if len(expectedArtifacts) != 0 {
+		t.Fatalf("RNA-PDX sample validation manifest omitted artifacts: %#v", expectedArtifacts)
 	}
 }

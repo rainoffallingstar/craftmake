@@ -25,11 +25,11 @@ func TestCompileBeaverBSStep1Fixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Tasks) != 7 || len(plan.Submissions) != 7 {
-		t.Fatalf("expected seven tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
+	if len(plan.Tasks) != 6 || len(plan.Submissions) != 6 {
+		t.Fatalf("expected six tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
 	}
-	if len(plan.Order) != 7 {
-		t.Fatalf("expected seven tasks in topological order, got %d", len(plan.Order))
+	if len(plan.Order) != 6 {
+		t.Fatalf("expected six tasks in topological order, got %d", len(plan.Order))
 	}
 
 	fastqcBeforeSampleA := plan.TaskByID["BeaverBS/step1/fastqc_before/sample=sample-a"]
@@ -51,18 +51,11 @@ func TestCompileBeaverBSStep1Fixture(t *testing.T) {
 		t.Fatalf("unexpected post-trim Fastqcx output %q", fastqcAfterSampleA.Outputs["read2_data"])
 	}
 
-	checker := plan.TaskByID["BeaverBS/step1/step1_checker"]
-	if checker == nil {
-		t.Fatal("missing global step1 checker")
+	if plan.TaskByID["BeaverBS/step1/step1_checker"] != nil {
+		t.Fatal("step1 must terminate in per-sample QC and trimming artifacts, not a marker-only checker task")
 	}
-	if len(checker.Dependencies) != 6 {
-		t.Fatalf("checker should depend on six sample tasks, got %d: %#v", len(checker.Dependencies), checker.Dependencies)
-	}
-	if len(checker.Inputs["trimmed_read1"]) != 2 || len(checker.Inputs["after_read2"]) != 2 {
-		t.Fatalf("checker should aggregate both samples: %#v", checker.Inputs)
-	}
-	if checker.Outputs["success_marker"] != filepath.Join("workflow", "log", "step1_success.txt") {
-		t.Fatalf("unexpected checker marker path %q", checker.Outputs["success_marker"])
+	if fastqcAfterSampleA.Outputs["read1_data"] != filepath.Join("workflow", "fastqc_clean", "sample-a_val_1_fastqcx", "fastqc_data.txt") {
+		t.Fatalf("unexpected post-trim terminal output %q", fastqcAfterSampleA.Outputs["read1_data"])
 	}
 	if !strings.Contains(plan.TaskByID["BeaverBS/step1/trim_reads/sample=sample-a"].Steps[0].Command, "trim_galore") {
 		t.Fatal("trim task command does not contain trim_galore")

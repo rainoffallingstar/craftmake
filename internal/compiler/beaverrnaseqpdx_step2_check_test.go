@@ -24,14 +24,24 @@ func TestCompileBeaverRNASEQPDXStep2CheckFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Tasks) != 12 || len(plan.Submissions) != 12 {
-		t.Fatalf("expected twelve tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
+	if len(plan.Tasks) != 9 || len(plan.Submissions) != 9 {
+		t.Fatalf("expected nine tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
 	}
 
 	artifactTaskID := "BeaverRNASEQPDX/step2-check/sample_artifacts/sample=sample-a/species=mouse"
 	artifactTask := plan.TaskByID[artifactTaskID]
 	if artifactTask == nil || len(artifactTask.Inputs) != 4 {
 		t.Fatalf("unexpected RNA-seq PDX artifact task: %#v", artifactTask)
+	}
+	for _, requiredFragment := range []string{
+		"otter.sample-artifacts-validation/v1",
+		"sha256sum",
+		"regular non-symlink file",
+		"mktemp \"${output_path}.tmp.XXXXXX\"",
+	} {
+		if !strings.Contains(artifactTask.Steps[0].Command, requiredFragment) {
+			t.Fatalf("sample artifact validation manifest command does not contain %q:\n%s", requiredFragment, artifactTask.Steps[0].Command)
+		}
 	}
 
 	patchTaskID := "BeaverRNASEQPDX/step2-check/patch_bam/sample=sample-a/species=mouse"
@@ -61,19 +71,23 @@ func TestCompileBeaverRNASEQPDXStep2CheckFixture(t *testing.T) {
 		t.Fatalf("RNA-seq Xenofilx command must not enable bisulfite mode: %q", xenofilxCommand)
 	}
 
-	filteredTask := plan.TaskByID["BeaverRNASEQPDX/step2-check/filtered_artifacts/sample=sample-a"]
-	if filteredTask == nil || !containsTaskID(filteredTask.Dependencies, xenofilxTask.ID) {
-		t.Fatalf("filtered BAM validation should depend on RNA-seq Xenofilx: %#v", filteredTask)
+	if xenofilxTask.Outputs["validation_manifest"] != filepath.Join("workflow", "bsmap", "Filtered_bams", "filtered-bam-validation.json") {
+		t.Fatalf("unexpected RNA-seq filtered BAM validation manifest: %#v", xenofilxTask.Outputs)
 	}
-	if filteredTask.Inputs["filtered_bam"][0] != filepath.Join("workflow", "bsmap", "Filtered_bams", "sample-a_fixed_human_Filtered.bam") {
-		t.Fatalf("unexpected RNA-seq filtered graft BAM path: %#v", filteredTask.Inputs["filtered_bam"])
+	for _, requiredFragment := range []string{
+		"otter.filtered-bam-validation/v1",
+		"sha256sum",
+		"regular non-symlink files",
+		"mktemp \"${manifest_path}.tmp.XXXXXX\"",
+	} {
+		if !strings.Contains(xenofilxCommand, requiredFragment) {
+			t.Fatalf("filtered BAM validation manifest command does not contain %q:\n%s", requiredFragment, xenofilxCommand)
+		}
 	}
-
-	checkerTask := plan.TaskByID["BeaverRNASEQPDX/step2-check/step2_checker"]
-	if checkerTask == nil || len(checkerTask.Dependencies) != 11 {
-		t.Fatalf("unexpected RNA-seq PDX step2 checker aggregation: %#v", checkerTask)
+	if plan.TaskByID["BeaverRNASEQPDX/step2-check/filtered_artifacts/sample=sample-a"] != nil {
+		t.Fatal("filtered BAM validation must be represented by Xenofilx's content-bearing aggregate manifest")
 	}
-	if checkerTask.Outputs["success_marker"] != filepath.Join("workflow", "log", "step2_success.txt") {
-		t.Fatalf("unexpected checker marker %q", checkerTask.Outputs["success_marker"])
+	if plan.TaskByID["BeaverRNASEQPDX/step2-check/step2_checker"] != nil {
+		t.Fatal("step2-check must terminate in the filtered BAM validation manifest, not a marker-only checker")
 	}
 }

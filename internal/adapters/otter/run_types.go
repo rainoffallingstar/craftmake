@@ -36,10 +36,11 @@ type resolvedWorkflow struct {
 }
 
 type resolvedExecution struct {
-	Executor  resolvedExecutor `yaml:"executor"`
-	Backend   resolvedBackend  `yaml:"backend"`
-	Site      resolvedString   `yaml:"site"`
-	Resources projectResources `yaml:"resources,omitempty"`
+	Executor  resolvedExecutor       `yaml:"executor"`
+	Backend   resolvedBackend        `yaml:"backend"`
+	Site      resolvedString         `yaml:"site"`
+	Resources projectResources       `yaml:"resources,omitempty"`
+	Slurm     resolvedSlurmResources `yaml:"slurm,omitempty"`
 }
 
 type resolvedExecutor struct {
@@ -64,6 +65,20 @@ type resolvedString struct {
 	Source string `yaml:"source"`
 }
 
+type resolvedInt struct {
+	Value  int    `yaml:"value"`
+	Source string `yaml:"source"`
+}
+
+type resolvedSlurmResources struct {
+	Partition   resolvedString `yaml:"partition"`
+	Account     resolvedString `yaml:"account"`
+	QOS         resolvedString `yaml:"qos"`
+	MaxJobs     resolvedInt    `yaml:"max_jobs"`
+	DefaultTime resolvedString `yaml:"default_time"`
+	ScratchRoot resolvedString `yaml:"scratch_root"`
+}
+
 type projectResources struct {
 	Defaults resourceSpec            `yaml:"defaults,omitempty"`
 	Phases   map[string]resourceSpec `yaml:"phases,omitempty"`
@@ -84,6 +99,10 @@ type sampleRecord struct {
 	Batch     string `yaml:"batch,omitempty"`
 	AdapterR1 string `yaml:"adapter_r1,omitempty"`
 	AdapterR2 string `yaml:"adapter_r2,omitempty"`
+	R1SHA256  string `yaml:"r1_sha256,omitempty"`
+	R1Size    int64  `yaml:"r1_size_bytes,omitempty"`
+	R2SHA256  string `yaml:"r2_sha256,omitempty"`
+	R2Size    int64  `yaml:"r2_size_bytes,omitempty"`
 }
 
 type resolvedReferences struct {
@@ -119,12 +138,16 @@ type resolvedAsset struct {
 }
 
 type runPaths struct {
-	RunRoot string `yaml:"run_root"`
-	Work    string `yaml:"work"`
-	Results string `yaml:"results"`
-	Logs    string `yaml:"logs"`
-	State   string `yaml:"state"`
-	Metrics string `yaml:"metrics"`
+	RunRoot         string   `yaml:"run_root"`
+	Work            string   `yaml:"work"`
+	Results         string   `yaml:"results"`
+	Logs            string   `yaml:"logs"`
+	State           string   `yaml:"state"`
+	Metrics         string   `yaml:"metrics"`
+	ProjectConfig   string   `yaml:"project_config,omitempty"`
+	SamplesManifest string   `yaml:"samples_manifest,omitempty"`
+	ReferencesLock  string   `yaml:"references_lock,omitempty"`
+	WorkflowAssets  []string `yaml:"workflow_assets,omitempty"`
 }
 
 type runDigests struct {

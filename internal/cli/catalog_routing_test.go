@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fallingstar10/craftmake/internal/compiler"
 	"github.com/spf13/cobra"
 )
 
@@ -20,8 +21,8 @@ func TestLoadPlanAutomaticallyRoutesOtterConfigurations(t *testing.T) {
 		expectedWorkflow string
 		expectedTasks    int
 	}{
-		{name: "single species bisulfite", configuration: "testdata/configs/beaverbs-step1.yaml", phase: "step1", expectedWorkflow: "BeaverBS", expectedTasks: 7},
-		{name: "multi species bisulfite", configuration: "testdata/configs/beaverpdx-step1.yaml", phase: "step1", expectedWorkflow: "BeaverPDX", expectedTasks: 7},
+		{name: "single species bisulfite", configuration: "testdata/configs/beaverbs-step1.yaml", phase: "step1", expectedWorkflow: "BeaverBS", expectedTasks: 6},
+		{name: "multi species bisulfite", configuration: "testdata/configs/beaverpdx-step1.yaml", phase: "step1", expectedWorkflow: "BeaverPDX", expectedTasks: 6},
 		{name: "single species RNA", configuration: "testdata/configs/beaverrna-step2.yaml", phase: "step2", expectedWorkflow: "BeaverRNA", expectedTasks: 6},
 		{name: "multi species RNA", configuration: "testdata/configs/beaverrnaseqpdx-step3.yaml", phase: "step3", expectedWorkflow: "BeaverRNASEQPDX", expectedTasks: 3},
 	}
@@ -163,6 +164,65 @@ func TestEffectiveSchedulerMaxCoresSeparatesLocalAndSlurmDefaults(t *testing.T) 
 	}
 	if actual := effectiveSchedulerMaxCores("local", 3, true); actual != 3 {
 		t.Fatalf("explicit local max cores was not preserved: %d", actual)
+	}
+}
+
+func TestResolveSlurmExecutionOptionsUsesImmutableSnapshot(t *testing.T) {
+	command := &cobra.Command{}
+	command.Flags().String("partition", "", "")
+	command.Flags().String("account", "", "")
+	command.Flags().String("qos", "", "")
+	command.Flags().String("time", "", "")
+	command.Flags().String("scratch-root", "", "")
+	options := commonOptions{execution: compiler.ExecutionContext{Slurm: compiler.SlurmExecutionContext{
+		Partition:   "compute",
+		Account:     "genomics",
+		QOS:         "normal",
+		DefaultTime: "2-00:00:00",
+		ScratchRoot: "/scratch/otter",
+	}}}
+
+	partition, account, qos, allocationTime, scratchRoot, err := resolveSlurmExecutionOptions(
+		command,
+		options,
+		"different",
+		"different",
+		"different",
+		"01:00:00",
+		"/different",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if partition != "compute" || account != "genomics" || qos != "normal" || allocationTime != "2-00:00:00" || scratchRoot != "/scratch/otter" {
+		t.Fatalf("immutable resources were not preserved: %q %q %q %q %q", partition, account, qos, allocationTime, scratchRoot)
+	}
+
+	if err := command.Flags().Set("partition", "different"); err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, _, _, err = resolveSlurmExecutionOptions(command, options, "different", "", "", "", "")
+	if err == nil || !strings.Contains(err.Error(), "cannot override immutable") {
+		t.Fatalf("expected immutable partition rejection, got %v", err)
+	}
+}
+
+func TestCapSlurmWorkersHonorsSnapshotLimit(t *testing.T) {
+	testCases := []struct {
+		backend   string
+		requested int
+		maxJobs   int
+		expected  int
+	}{
+		{backend: "slurm", requested: 12, maxJobs: 4, expected: 4},
+		{backend: "slurm", requested: 4, maxJobs: 12, expected: 4},
+		{backend: "slurm", requested: 12, maxJobs: 0, expected: 12},
+		{backend: "local", requested: 12, maxJobs: 4, expected: 12},
+	}
+	for _, testCase := range testCases {
+		if actual := capSlurmWorkers(testCase.backend, testCase.requested, testCase.maxJobs); actual != testCase.expected {
+			t.Fatalf("backend=%s requested=%d max_jobs=%d: got %d, expected %d", testCase.backend, testCase.requested, testCase.maxJobs, actual, testCase.expected)
+		}
 	}
 }
 

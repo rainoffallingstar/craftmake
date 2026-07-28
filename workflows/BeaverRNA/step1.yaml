@@ -85,29 +85,3 @@ jobs:
           mkdir -p "$(dirname '${{ outputs.read1_data }}')" "$(dirname '${{ outputs.read2_data }}')"
           fastqcx -q '${{ inputs.read1 }}' -s '${{ config.directories.qc.after }}/${{ sample.id }}_val_1_fastqcx' --no-html
           fastqcx -q '${{ inputs.read2 }}' -s '${{ config.directories.qc.after }}/${{ sample.id }}_val_2_fastqcx' --no-html
-
-  step1_checker:
-    name: Check BeaverRNA step1
-    scope: global
-    dimensions: []
-    needs: [fastqc_before, trim_reads, fastqc_after]
-    inputs:
-      before_read1: "${{ jobs.fastqc_before.outputs.read1_data }}"
-      before_read2: "${{ jobs.fastqc_before.outputs.read2_data }}"
-      trimmed_read1: "${{ jobs.trim_reads.outputs.read1 }}"
-      trimmed_read2: "${{ jobs.trim_reads.outputs.read2 }}"
-      trimmed_read1_report: "${{ jobs.trim_reads.outputs.read1_report }}"
-      trimmed_read2_report: "${{ jobs.trim_reads.outputs.read2_report }}"
-      after_read1: "${{ jobs.fastqc_after.outputs.read1_data }}"
-      after_read2: "${{ jobs.fastqc_after.outputs.read2_data }}"
-    outputs:
-      success_marker: "${{ config.directories.sid_log }}/step1_success.txt"
-    resources:
-      cores: 5
-      memory: 2G
-      partition: cpu
-    steps:
-      - name: Write step1 success marker
-        run: |
-          mkdir -p "$(dirname '${{ outputs.success_marker }}')"
-          touch '${{ outputs.success_marker }}'

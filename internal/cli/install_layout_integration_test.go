@@ -60,7 +60,7 @@ func TestMakeInstallProvidesPortableWorkflowCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("installed catalog validation: %v\n%s", err, validateOutput)
 	}
-	if !strings.Contains(string(validateOutput), "valid: BeaverRNASEQPDX step3-check (9 tasks, 9 submissions)") {
+	if !strings.Contains(string(validateOutput), "valid: BeaverRNASEQPDX step3-check (8 tasks, 8 submissions)") {
 		t.Fatalf("unexpected installed catalog validation output %q", validateOutput)
 	}
 

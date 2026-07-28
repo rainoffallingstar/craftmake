@@ -35,7 +35,7 @@ func TestRunAutomaticallyRoutesCatalogWorkflowAndUsesCache(t *testing.T) {
 	)
 	firstRunID := outputValue(t, firstRunOutput, "run_id")
 	firstStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", firstRunID)
-	if !strings.Contains(firstStatus, "workflow: BeaverBS") || !strings.Contains(firstStatus, "phase: step1") || !strings.Contains(firstStatus, "succeeded: 7") {
+	if !strings.Contains(firstStatus, "workflow: BeaverBS") || !strings.Contains(firstStatus, "phase: step1") || !strings.Contains(firstStatus, "succeeded: 6") {
 		t.Fatalf("unexpected automatically routed run status:\n%s", firstStatus)
 	}
 
@@ -66,7 +66,7 @@ func TestRunAutomaticallyRoutesCatalogWorkflowAndUsesCache(t *testing.T) {
 	)
 	secondRunID := outputValue(t, secondRunOutput, "run_id")
 	secondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID)
-	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 7") {
+	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 6") {
 		t.Fatalf("unexpected automatic routing cached status:\n%s", secondStatus)
 	}
 }

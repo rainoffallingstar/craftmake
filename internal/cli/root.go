@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -32,6 +33,8 @@ type BuildInfo struct {
 	Date    string
 }
 
+var slurmAllocationTimePattern = regexp.MustCompile("^(?:[0-9]+-)?[0-9]{1,2}:[0-5][0-9]:[0-5][0-9]\\z")
+
 type commonOptions struct {
 	workflowPath    string
 	configPath      string
@@ -42,6 +45,7 @@ type commonOptions struct {
 	format          string
 	resolvedBackend string
 	resolvedRunID   string
+	execution       compiler.ExecutionContext
 	legacyConfig    bool
 }
 
@@ -126,6 +130,10 @@ func newRunCommand(buildInfo BuildInfo) *cobra.Command {
 	options := commonOptions{format: "text"}
 	var backendName string
 	var slurmPartition string
+	var slurmAccount string
+	var slurmQOS string
+	var slurmDefaultTime string
+	var slurmScratchRoot string
 	var workers int
 	var maxParallel int
 	var maxCores int
@@ -152,6 +160,20 @@ func newRunCommand(buildInfo BuildInfo) *cobra.Command {
 		} else if !options.legacyConfig && runID != options.resolvedRunID {
 			return configurationError(fmt.Errorf("--run-id cannot override immutable run id %q", options.resolvedRunID))
 		}
+		if backendName == "slurm" {
+			slurmPartition, slurmAccount, slurmQOS, slurmDefaultTime, slurmScratchRoot, err = resolveSlurmExecutionOptions(
+				command,
+				options,
+				slurmPartition,
+				slurmAccount,
+				slurmQOS,
+				slurmDefaultTime,
+				slurmScratchRoot,
+			)
+			if err != nil {
+				return err
+			}
+		}
 		if dryRun {
 			planData, marshalErr := json.Marshal(plan)
 			if marshalErr != nil {
@@ -171,14 +193,23 @@ func newRunCommand(buildInfo BuildInfo) *cobra.Command {
 		if workerErr != nil {
 			return workerErr
 		}
+		effectiveWorkers = capSlurmWorkers(
+			backendName,
+			effectiveWorkers,
+			options.execution.Slurm.MaxJobs,
+		)
 		effectiveMaxCores := effectiveSchedulerMaxCores(backendName, maxCores, command.Flags().Changed("max-cores"))
 		var selectedBackend backend.Backend
 		switch backendName {
 		case "local":
 			selectedBackend = local.New()
 		case "slurm":
-			slurmBackend, configureErr := configuredSlurmBackend(
+			slurmBackend, configureErr := configuredSlurmBackendWithResources(
 				slurmPartition,
+				slurmAccount,
+				slurmQOS,
+				slurmDefaultTime,
+				slurmScratchRoot,
 				slurmSubmitAttempts,
 				slurmSubmitBackoff,
 				slurmSubmitMaximumBackoff,
@@ -242,6 +273,10 @@ func newRunCommand(buildInfo BuildInfo) *cobra.Command {
 	addPlanFlags(command, &options)
 	command.Flags().StringVar(&backendName, "backend", "", "Override the resolved execution backend (local/slurm)")
 	command.Flags().StringVar(&slurmPartition, "partition", os.Getenv("CRAFTMAKE_SLURM_PARTITION"), "Override the Slurm partition (or set CRAFTMAKE_SLURM_PARTITION)")
+	command.Flags().StringVar(&slurmAccount, "account", "", "Slurm account")
+	command.Flags().StringVar(&slurmQOS, "qos", "", "Slurm quality of service")
+	command.Flags().StringVar(&slurmDefaultTime, "time", "", "Slurm allocation time limit")
+	command.Flags().StringVar(&slurmScratchRoot, "scratch-root", "", "Scratch root exported to Slurm workers")
 	command.Flags().IntVar(&workers, "workers", 0, "Maximum active submissions; zero uses --max-parallel")
 	command.Flags().IntVar(&maxParallel, "max-parallel", runtime.NumCPU(), "Maximum active submissions when --workers is zero")
 	command.Flags().IntVar(&maxCores, "max-cores", 0, "Scheduler CPU admission limit; Local defaults to machine CPUs, Slurm defaults to unlimited")
@@ -533,6 +568,56 @@ func backendForName(backendName string) (backend.Backend, error) {
 	return backendForNameWithPartition(backendName, "")
 }
 
+func resolveSlurmExecutionOptions(
+	command *cobra.Command,
+	options commonOptions,
+	partition string,
+	account string,
+	qos string,
+	defaultTime string,
+	scratchRoot string,
+) (string, string, string, string, string, error) {
+	if !options.legacyConfig {
+		for _, flagName := range []string{"partition", "account", "qos", "time", "scratch-root"} {
+			flag := command.Flags().Lookup(flagName)
+			if flag != nil && flag.Changed {
+				return "", "", "", "", "", configurationError(
+					fmt.Errorf("--%s cannot override immutable run SLURM resources", flagName),
+				)
+			}
+		}
+		resolvedSlurm := options.execution.Slurm
+		return resolvedSlurm.Partition,
+			resolvedSlurm.Account,
+			resolvedSlurm.QOS,
+			resolvedSlurm.DefaultTime,
+			resolvedSlurm.ScratchRoot,
+			nil
+	}
+	if strings.TrimSpace(defaultTime) != "" && !slurmAllocationTimePattern.MatchString(defaultTime) {
+		return "", "", "", "", "", usageError(
+			"--time %q must use D-HH:MM:SS or HH:MM:SS format",
+			defaultTime,
+		)
+	}
+	if strings.TrimSpace(scratchRoot) != "" && !filepath.IsAbs(scratchRoot) {
+		return "", "", "", "", "", usageError("--scratch-root must be an absolute path")
+	}
+	return strings.TrimSpace(partition),
+		strings.TrimSpace(account),
+		strings.TrimSpace(qos),
+		strings.TrimSpace(defaultTime),
+		strings.TrimSpace(scratchRoot),
+		nil
+}
+
+func capSlurmWorkers(backendName string, requestedWorkers, maximumJobs int) int {
+	if backendName != "slurm" || maximumJobs <= 0 || requestedWorkers <= maximumJobs {
+		return requestedWorkers
+	}
+	return maximumJobs
+}
+
 func backendForNameWithPartition(backendName, slurmPartition string) (backend.Backend, error) {
 	switch backendName {
 	case "local":
@@ -571,6 +656,30 @@ func configuredSlurmBackend(
 	submitMaximumBackoff time.Duration,
 	pendingTimeout time.Duration,
 ) (*slurm.Backend, error) {
+	return configuredSlurmBackendWithResources(
+		partition,
+		"",
+		"",
+		"",
+		"",
+		submitAttempts,
+		submitBackoff,
+		submitMaximumBackoff,
+		pendingTimeout,
+	)
+}
+
+func configuredSlurmBackendWithResources(
+	partition string,
+	account string,
+	qos string,
+	defaultTime string,
+	scratchRoot string,
+	submitAttempts int,
+	submitBackoff time.Duration,
+	submitMaximumBackoff time.Duration,
+	pendingTimeout time.Duration,
+) (*slurm.Backend, error) {
 	if submitAttempts <= 0 {
 		return nil, usageError("--slurm-submit-attempts must be positive")
 	}
@@ -587,6 +696,10 @@ func configuredSlurmBackend(
 		return nil, usageError("--slurm-pending-timeout must be zero or positive")
 	}
 	selectedBackend := slurm.NewWithPartition(partition)
+	selectedBackend.AccountOverride = strings.TrimSpace(account)
+	selectedBackend.QOSOverride = strings.TrimSpace(qos)
+	selectedBackend.DefaultTimeOverride = strings.TrimSpace(defaultTime)
+	selectedBackend.ScratchRoot = strings.TrimSpace(scratchRoot)
 	selectedBackend.SubmitMaxAttempts = submitAttempts
 	selectedBackend.SubmitInitialBackoff = submitBackoff
 	selectedBackend.SubmitMaximumBackoff = submitMaximumBackoff
@@ -776,28 +889,65 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 		if err != nil {
 			return configurationError(err)
 		}
-		selectedBackend, err := backendForNameWithPartition(run.Backend, slurmPartition)
-		if err != nil {
-			return err
+		projectDirectory := filepath.Dir(run.ConfigPath)
+		options := commonOptions{
+			workflowPath: run.WorkflowPath,
+			configPath:   run.ConfigPath,
+			projectDir:   projectDirectory,
+			stateDir:     filepath.Dir(statePath),
+			legacyConfig: legacyConfig,
+		}
+		if !legacyConfig {
+			context, loadErr := otter.Load(run.ConfigPath)
+			if loadErr != nil {
+				return configurationError(fmt.Errorf("load immutable run snapshot for resume: %w", loadErr))
+			}
+			if context.Workflow.Backend != run.Backend {
+				return configurationError(fmt.Errorf("persisted backend %q does not match immutable run backend %q", run.Backend, context.Workflow.Backend))
+			}
+			options.execution = context.Execution
 		}
 		effectiveWorkers, workerErr := resolveEffectiveWorkers(workers, maxParallel)
 		if workerErr != nil {
 			return workerErr
 		}
+		effectiveWorkers = capSlurmWorkers(run.Backend, effectiveWorkers, options.execution.Slurm.MaxJobs)
 		effectiveMaxCores := effectiveSchedulerMaxCores(run.Backend, maxCores, command.Flags().Changed("max-cores"))
-		if run.Backend == "slurm" {
-			selectedBackend, err = configuredSlurmBackend(
+		var selectedBackend backend.Backend
+		switch run.Backend {
+		case "local":
+			selectedBackend = local.New()
+		case "slurm":
+			partition, account, qos, defaultTime, scratchRoot, resolveErr := resolveSlurmExecutionOptions(
+				command,
+				options,
 				slurmPartition,
+				"",
+				"",
+				"",
+				"",
+			)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			configuredBackend, configureErr := configuredSlurmBackendWithResources(
+				partition,
+				account,
+				qos,
+				defaultTime,
+				scratchRoot,
 				slurmSubmitAttempts,
 				slurmSubmitBackoff,
 				slurmSubmitMaximumBackoff,
 				slurmPendingTimeout,
 			)
-			if err != nil {
-				return err
+			if configureErr != nil {
+				return configureErr
 			}
+			selectedBackend = configuredBackend
+		default:
+			return backendFailureError(fmt.Errorf("unsupported persisted backend %q", run.Backend))
 		}
-		projectDirectory := filepath.Dir(run.ConfigPath)
 		var recoveryPayload *protocol.RecoveryPayload
 		if run.Status == "running" {
 			recoveryLogPath := controllerlog.DefaultPath(filepath.Dir(statePath), runID)
@@ -825,13 +975,6 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 			}
 		}
 
-		options := commonOptions{
-			workflowPath: run.WorkflowPath,
-			configPath:   run.ConfigPath,
-			projectDir:   projectDirectory,
-			stateDir:     filepath.Dir(statePath),
-			legacyConfig: legacyConfig,
-		}
 		plan, err := loadPlan(&options)
 		if err != nil {
 			return err
@@ -954,6 +1097,7 @@ func loadPlan(options *commonOptions) (*compiler.Plan, error) {
 		return nil, configurationError(err)
 	}
 	options.resolvedBackend = context.Workflow.Backend
+	options.execution = context.Execution
 	if options.legacyConfig {
 		options.resolvedRunID = ""
 		if options.resolvedBackend == "" {

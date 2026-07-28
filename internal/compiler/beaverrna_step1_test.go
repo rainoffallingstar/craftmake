@@ -36,8 +36,8 @@ func TestCompileBeaverRNAStep1Fixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Tasks) != 7 || len(plan.Submissions) != 7 {
-		t.Fatalf("expected seven tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
+	if len(plan.Tasks) != 6 || len(plan.Submissions) != 6 {
+		t.Fatalf("expected six tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
 	}
 
 	fastqcBeforeTask := plan.TaskByID["BeaverRNA/step1/fastqc_before/sample=sample-a"]
@@ -64,14 +64,10 @@ func TestCompileBeaverRNAStep1Fixture(t *testing.T) {
 	if fastqcAfterTask.Outputs["read2_data"] != filepath.Join("workflow", "fastqc_clean", "sample-a_val_2_fastqcx", "fastqc_data.txt") {
 		t.Fatalf("unexpected BeaverRNA post-trim Fastqcx output %q", fastqcAfterTask.Outputs["read2_data"])
 	}
-	checkerTask := plan.TaskByID["BeaverRNA/step1/step1_checker"]
-	if checkerTask == nil || len(checkerTask.Dependencies) != 6 {
-		t.Fatalf("BeaverRNA checker should depend on six sample tasks: %#v", checkerTask)
+	if plan.TaskByID["BeaverRNA/step1/step1_checker"] != nil {
+		t.Fatal("step1 must terminate in per-sample RNA QC and trimming artifacts, not a marker-only checker task")
 	}
-	if len(checkerTask.Inputs["trimmed_read1"]) != 2 || len(checkerTask.Inputs["after_read2"]) != 2 {
-		t.Fatalf("BeaverRNA checker should aggregate both samples: %#v", checkerTask.Inputs)
-	}
-	if checkerTask.Outputs["success_marker"] != filepath.Join("workflow", "log", "step1_success.txt") {
-		t.Fatalf("unexpected BeaverRNA checker marker %q", checkerTask.Outputs["success_marker"])
+	if fastqcAfterTask.Outputs["read1_data"] != filepath.Join("workflow", "fastqc_clean", "sample-a_val_1_fastqcx", "fastqc_data.txt") {
+		t.Fatalf("unexpected RNA post-trim terminal output %q", fastqcAfterTask.Outputs["read1_data"])
 	}
 }

@@ -68,10 +68,10 @@ func TestCompileBeaverRNASEQPDXStep3Fixture(t *testing.T) {
 	if !strings.Contains(splicingCommand, "matsrun run") || !strings.Contains(splicingCommand, "--pdxmode 1") {
 		t.Fatalf("unexpected RNA-seq PDX splicing command: %q", splicingCommand)
 	}
-	if !strings.Contains(splicingCommand, "RNASplicing_NOTRUN") || !strings.Contains(splicingCommand, "RNASplicing_DONE") {
-		t.Fatalf("splicing command should preserve conditional marker behavior: %q", splicingCommand)
+	if !strings.Contains(splicingCommand, `"status": "produced"`) || !strings.Contains(splicingCommand, `"status": "not_applicable"`) {
+		t.Fatalf("splicing command should emit a typed produced/not_applicable outcome: %q", splicingCommand)
 	}
-	if splicingTask.Outputs["success_marker"] != filepath.Join("workflow", "bsmap", "RNASplicing", "RNASplicing_success.txt") {
-		t.Fatalf("unexpected splicing marker %q", splicingTask.Outputs["success_marker"])
+	if splicingTask.Outputs["outcome"] != filepath.Join("workflow", "bsmap", "RNASplicing", "splicing-outcome.json") {
+		t.Fatalf("unexpected splicing outcome %q", splicingTask.Outputs["outcome"])
 	}
 }
