@@ -25,7 +25,7 @@ jobs:
       cores: 1
       memory: 4G
       partition: amd_512
-      time: 02:00:00
+      time: 3-00:00:00
     steps:
       - name: Download provider-published FASTA and GTF archives
         run: |
@@ -36,13 +36,30 @@ jobs:
             local checksum_algorithm="$2"
             local expected_checksum="$3"
             local destination_path="$4"
+            local temporary_path="${destination_path}.part"
             local actual_checksum
-            if [[ ! -s "${destination_path}" ]]; then
-              temporary_path="${destination_path}.part"
-              rm -f "${temporary_path}"
-              curl --fail --location --retry 5 --retry-all-errors --output "${temporary_path}" "${source_url}"
-              mv "${temporary_path}" "${destination_path}"
+
+            if [[ -s "${destination_path}" ]]; then
+              case "${checksum_algorithm}" in
+                md5)
+                  actual_checksum="$(md5sum "${destination_path}" | awk '{print $1}')"
+                  ;;
+                bsd-sum)
+                  actual_checksum="$(sum "${destination_path}" | awk '{print $1 " " $2}')"
+                  ;;
+                *)
+                  printf 'unsupported checksum algorithm: %s\n' "${checksum_algorithm}" >&2
+                  return 64
+                  ;;
+              esac
+              [[ "${actual_checksum}" == "${expected_checksum}" ]] && return 0
+              rm -f "${destination_path}"
             fi
+
+            curl --continue-at - --fail --location --retry 5 --retry-all-errors \
+              --output "${temporary_path}" "${source_url}"
+            mv "${temporary_path}" "${destination_path}"
+
             case "${checksum_algorithm}" in
               md5)
                 actual_checksum="$(md5sum "${destination_path}" | awk '{print $1}')"
@@ -55,7 +72,11 @@ jobs:
                 return 64
                 ;;
             esac
-            [[ "${actual_checksum}" == "${expected_checksum}" ]]
+            if [[ "${actual_checksum}" != "${expected_checksum}" ]]; then
+              rm -f "${destination_path}"
+              printf 'provider checksum mismatch for %s\n' "${source_url}" >&2
+              return 65
+            fi
           }
           fetch_and_verify '${{ config.reference_build.fasta_url }}' '${{ config.reference_build.fasta_checksum_algorithm }}' '${{ config.reference_build.fasta_checksum_value }}' '${{ outputs.fasta_archive }}'
           fetch_and_verify '${{ config.reference_build.gtf_url }}' '${{ config.reference_build.gtf_checksum_algorithm }}' '${{ config.reference_build.gtf_checksum_value }}' '${{ outputs.gtf_archive }}'
@@ -65,8 +86,8 @@ jobs:
             printf 'gtf\t%s\t%s\t%s\t%s\t%s\n' '${{ config.reference_build.gtf_url }}' '${{ config.reference_build.gtf_checksum_algorithm }}' '${{ config.reference_build.gtf_checksum_value }}' "$(sha256sum '${{ outputs.gtf_archive }}' | awk '{print $1}')" '${{ outputs.gtf_archive }}'
           } > '${{ outputs.source_manifest }}'
 
-  prepare_lite_assets:
-    name: Derive declared mouse canary-contig FASTA and GTF
+  prepare_assets:
+    name: Derive declared reference FASTA and GTF
     scope: global
     needs: [acquire_sources]
     inputs:
@@ -82,20 +103,28 @@ jobs:
       partition: amd_512
       time: 04:00:00
     steps:
-      - name: Filter source assets to declared contigs
+      - name: Materialize declared reference contigs
         run: |
           set -euo pipefail
           mkdir -p "$(dirname '${{ outputs.fasta }}')" "$(dirname '${{ outputs.gtf }}')" '${{ config.reference_build.evidence_dir }}'
           temporary_fasta='${{ outputs.fasta }}.part'
           temporary_gtf='${{ outputs.gtf }}.part'
           awk -v contigs='${{ config.reference_build.contigs }}' '
-            BEGIN { split(contigs, names, /,/); for (index in names) allowed[names[index]] = 1 }
-            /^>/ { contig = substr($1, 2); keep = (contig in allowed) }
+            BEGIN {
+              include_all = (contigs == "*")
+              split(contigs, names, /,/)
+              for (index in names) allowed[names[index]] = 1
+            }
+            /^>/ { contig = substr($1, 2); keep = include_all || (contig in allowed) }
             keep { print }
           ' < <(gzip -cd '${{ inputs.fasta_archive }}') > "${temporary_fasta}"
           awk -v contigs='${{ config.reference_build.contigs }}' '
-            BEGIN { split(contigs, names, /,/); for (index in names) allowed[names[index]] = 1 }
-            /^#/ || ($1 in allowed) { print }
+            BEGIN {
+              include_all = (contigs == "*")
+              split(contigs, names, /,/)
+              for (index in names) allowed[names[index]] = 1
+            }
+            /^#/ || include_all || ($1 in allowed) { print }
           ' < <(gzip -cd '${{ inputs.gtf_archive }}') > "${temporary_gtf}"
           grep -q '^>' "${temporary_fasta}"
           awk 'BEGIN { feature_count = 0 } !/^#/ { feature_count += 1 } END { exit feature_count == 0 }' "${temporary_gtf}"
@@ -110,10 +139,10 @@ jobs:
   publish_release:
     name: Build indexes and publish immutable reference release
     scope: global
-    needs: [prepare_lite_assets]
+    needs: [prepare_assets]
     inputs:
-      fasta: "${{ jobs.prepare_lite_assets.outputs.fasta }}"
-      gtf: "${{ jobs.prepare_lite_assets.outputs.gtf }}"
+      fasta: "${{ jobs.prepare_assets.outputs.fasta }}"
+      gtf: "${{ jobs.prepare_assets.outputs.gtf }}"
     outputs:
       manifest: "${{ config.reference_build.registry_root }}/genomes/${{ config.reference_build.reference_id }}/${{ config.reference_build.release }}/manifest.json"
     resources:
