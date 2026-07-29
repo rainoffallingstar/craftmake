@@ -43,5 +43,6 @@ jobs:
           tar -xzf dist/craftmake_0.0.0-ci_linux_amd64.tar.gz -C "$temporary_directory"
           installed_binary="$temporary_directory/craftmake_0.0.0-ci_linux_amd64/bin/craftmake"
           "$installed_binary" validate \
+            --legacy-config \
             --config testdata/configs/beaverrnaseqpdx-step3-check.yaml \
             --phase step3-check
