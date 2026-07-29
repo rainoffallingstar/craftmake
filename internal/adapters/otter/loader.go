@@ -130,33 +130,44 @@ func LoadReferenceBuild(path string) (*compiler.Context, error) {
 
 func loadReferenceBuild(path, baseDirectory string, raw map[string]any) (*compiler.Context, error) {
 	requiredFields := map[string]string{
-		"reference_build.run_id":             firstString(raw, "reference_build.run_id"),
-		"reference_build.reference_id":       firstString(raw, "reference_build.reference_id"),
-		"reference_build.release":            firstString(raw, "reference_build.release"),
-		"reference_build.organism":           firstString(raw, "reference_build.organism"),
-		"reference_build.assembly":           firstString(raw, "reference_build.assembly"),
-		"reference_build.aliases":            firstString(raw, "reference_build.aliases"),
-		"reference_build.cache_dir":          firstString(raw, "reference_build.cache_dir"),
-		"reference_build.work_dir":           firstString(raw, "reference_build.work_dir"),
-		"reference_build.registry_root":      firstString(raw, "reference_build.registry_root"),
-		"reference_build.evidence_dir":       firstString(raw, "reference_build.evidence_dir"),
-		"reference_build.fasta_url":          firstString(raw, "reference_build.fasta_url"),
-		"reference_build.fasta_filename":     firstString(raw, "reference_build.fasta_filename"),
-		"reference_build.fasta_md5":          firstString(raw, "reference_build.fasta_md5"),
-		"reference_build.gtf_url":            firstString(raw, "reference_build.gtf_url"),
-		"reference_build.gtf_filename":       firstString(raw, "reference_build.gtf_filename"),
-		"reference_build.gtf_md5":            firstString(raw, "reference_build.gtf_md5"),
-		"reference_build.star_sjdb_overhang": firstString(raw, "reference_build.star_sjdb_overhang"),
-		"reference_build.contigs":            firstString(raw, "reference_build.contigs"),
-		"reference_build.otter_binary":       firstString(raw, "reference_build.otter_binary"),
-		"reference_build.samtools_binary":    firstString(raw, "reference_build.samtools_binary"),
-		"reference_build.bismark_binary":     firstString(raw, "reference_build.bismark_binary"),
-		"reference_build.bowtie2_binary":     firstString(raw, "reference_build.bowtie2_binary"),
-		"reference_build.star_binary":        firstString(raw, "reference_build.star_binary"),
+		"reference_build.run_id":                   firstString(raw, "reference_build.run_id"),
+		"reference_build.reference_id":             firstString(raw, "reference_build.reference_id"),
+		"reference_build.release":                  firstString(raw, "reference_build.release"),
+		"reference_build.organism":                 firstString(raw, "reference_build.organism"),
+		"reference_build.assembly":                 firstString(raw, "reference_build.assembly"),
+		"reference_build.aliases":                  firstString(raw, "reference_build.aliases"),
+		"reference_build.cache_dir":                firstString(raw, "reference_build.cache_dir"),
+		"reference_build.work_dir":                 firstString(raw, "reference_build.work_dir"),
+		"reference_build.registry_root":            firstString(raw, "reference_build.registry_root"),
+		"reference_build.evidence_dir":             firstString(raw, "reference_build.evidence_dir"),
+		"reference_build.fasta_url":                firstString(raw, "reference_build.fasta_url"),
+		"reference_build.fasta_filename":           firstString(raw, "reference_build.fasta_filename"),
+		"reference_build.fasta_checksum_algorithm": firstString(raw, "reference_build.fasta_checksum_algorithm"),
+		"reference_build.fasta_checksum_value":     firstString(raw, "reference_build.fasta_checksum_value"),
+		"reference_build.gtf_url":                  firstString(raw, "reference_build.gtf_url"),
+		"reference_build.gtf_filename":             firstString(raw, "reference_build.gtf_filename"),
+		"reference_build.gtf_checksum_algorithm":   firstString(raw, "reference_build.gtf_checksum_algorithm"),
+		"reference_build.gtf_checksum_value":       firstString(raw, "reference_build.gtf_checksum_value"),
+		"reference_build.star_sjdb_overhang":       firstString(raw, "reference_build.star_sjdb_overhang"),
+		"reference_build.contigs":                  firstString(raw, "reference_build.contigs"),
+		"reference_build.otter_binary":             firstString(raw, "reference_build.otter_binary"),
+		"reference_build.samtools_binary":          firstString(raw, "reference_build.samtools_binary"),
+		"reference_build.bismark_binary":           firstString(raw, "reference_build.bismark_binary"),
+		"reference_build.bowtie2_binary":           firstString(raw, "reference_build.bowtie2_binary"),
+		"reference_build.star_binary":              firstString(raw, "reference_build.star_binary"),
 	}
 	for fieldName, fieldValue := range requiredFields {
 		if strings.TrimSpace(fieldValue) == "" {
 			return nil, fmt.Errorf("reference build configuration requires %s", fieldName)
+		}
+	}
+	for _, checksumAlgorithmField := range []string{
+		"reference_build.fasta_checksum_algorithm",
+		"reference_build.gtf_checksum_algorithm",
+	} {
+		checksumAlgorithm := firstString(raw, checksumAlgorithmField)
+		if checksumAlgorithm != "md5" && checksumAlgorithm != "bsd-sum" {
+			return nil, fmt.Errorf("reference build configuration has unsupported %s %q; supported values are md5 and bsd-sum", checksumAlgorithmField, checksumAlgorithm)
 		}
 	}
 	for _, pathField := range []string{

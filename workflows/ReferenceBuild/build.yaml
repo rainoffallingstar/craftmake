@@ -33,24 +33,36 @@ jobs:
           mkdir -p '${{ config.reference_build.cache_dir }}' '${{ config.reference_build.evidence_dir }}'
           fetch_and_verify() {
             local source_url="$1"
-            local expected_md5="$2"
-            local destination_path="$3"
-            local actual_md5
+            local checksum_algorithm="$2"
+            local expected_checksum="$3"
+            local destination_path="$4"
+            local actual_checksum
             if [[ ! -s "${destination_path}" ]]; then
               temporary_path="${destination_path}.part"
               rm -f "${temporary_path}"
               curl --fail --location --retry 5 --retry-all-errors --output "${temporary_path}" "${source_url}"
               mv "${temporary_path}" "${destination_path}"
             fi
-            actual_md5="$(md5sum "${destination_path}" | awk '{print $1}')"
-            [[ "${actual_md5}" == "${expected_md5}" ]]
+            case "${checksum_algorithm}" in
+              md5)
+                actual_checksum="$(md5sum "${destination_path}" | awk '{print $1}')"
+                ;;
+              bsd-sum)
+                actual_checksum="$(sum "${destination_path}" | awk '{print $1 " " $2}')"
+                ;;
+              *)
+                printf 'unsupported checksum algorithm: %s\n' "${checksum_algorithm}" >&2
+                return 64
+                ;;
+            esac
+            [[ "${actual_checksum}" == "${expected_checksum}" ]]
           }
-          fetch_and_verify '${{ config.reference_build.fasta_url }}' '${{ config.reference_build.fasta_md5 }}' '${{ outputs.fasta_archive }}'
-          fetch_and_verify '${{ config.reference_build.gtf_url }}' '${{ config.reference_build.gtf_md5 }}' '${{ outputs.gtf_archive }}'
+          fetch_and_verify '${{ config.reference_build.fasta_url }}' '${{ config.reference_build.fasta_checksum_algorithm }}' '${{ config.reference_build.fasta_checksum_value }}' '${{ outputs.fasta_archive }}'
+          fetch_and_verify '${{ config.reference_build.gtf_url }}' '${{ config.reference_build.gtf_checksum_algorithm }}' '${{ config.reference_build.gtf_checksum_value }}' '${{ outputs.gtf_archive }}'
           {
-            printf 'asset\turl\tprovider_md5\tsha256\tpath\n'
-            printf 'fasta\t%s\t%s\t%s\t%s\n' '${{ config.reference_build.fasta_url }}' '${{ config.reference_build.fasta_md5 }}' "$(sha256sum '${{ outputs.fasta_archive }}' | awk '{print $1}')" '${{ outputs.fasta_archive }}'
-            printf 'gtf\t%s\t%s\t%s\t%s\n' '${{ config.reference_build.gtf_url }}' '${{ config.reference_build.gtf_md5 }}' "$(sha256sum '${{ outputs.gtf_archive }}' | awk '{print $1}')" '${{ outputs.gtf_archive }}'
+            printf 'asset\turl\tprovider_checksum_algorithm\tprovider_checksum\tsha256\tpath\n'
+            printf 'fasta\t%s\t%s\t%s\t%s\t%s\n' '${{ config.reference_build.fasta_url }}' '${{ config.reference_build.fasta_checksum_algorithm }}' '${{ config.reference_build.fasta_checksum_value }}' "$(sha256sum '${{ outputs.fasta_archive }}' | awk '{print $1}')" '${{ outputs.fasta_archive }}'
+            printf 'gtf\t%s\t%s\t%s\t%s\t%s\n' '${{ config.reference_build.gtf_url }}' '${{ config.reference_build.gtf_checksum_algorithm }}' '${{ config.reference_build.gtf_checksum_value }}' "$(sha256sum '${{ outputs.gtf_archive }}' | awk '{print $1}')" '${{ outputs.gtf_archive }}'
           } > '${{ outputs.source_manifest }}'
 
   prepare_lite_assets:
