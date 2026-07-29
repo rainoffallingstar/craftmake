@@ -1,0 +1,24 @@
+reference_build:
+  run_id: reference-mm10-canary-20260729T000000Z
+  reference_id: mm10-canary
+  release: GRCm38-gencode-M25-chr19-MT
+  organism: Mus musculus
+  assembly: GRCm38
+  aliases: mm10-canary,mouse-canary
+  cache_dir: /gate6/cache/mm10-canary
+  work_dir: /gate6/work/mm10-canary
+  registry_root: /gate6/references
+  evidence_dir: /gate6/evidence/mm10-canary
+  fasta_url: https://example.invalid/GRCm38.primary_assembly.genome.fa.gz
+  fasta_filename: GRCm38.primary_assembly.genome.fa.gz
+  fasta_md5: 3bc591be24b77f710b6ba5d41022fc5a
+  gtf_url: https://example.invalid/gencode.vM25.primary_assembly.annotation.gtf.gz
+  gtf_filename: gencode.vM25.primary_assembly.annotation.gtf.gz
+  gtf_md5: c5125258a0a2c5250ddb4c192abbf4e8
+  contigs: 19,MT
+  star_sjdb_overhang: 149
+  otter_binary: /gate6/bin/otter
+  samtools_binary: /gate6/envs/otter-core/bin/samtools
+  bismark_binary: /gate6/envs/otter-core/bin/bismark_genome_preparation
+  bowtie2_binary: /gate6/envs/otter-core/bin/bowtie2-build
+  star_binary: /gate6/envs/otter-core/bin/STAR

@@ -36,17 +36,18 @@ type BuildInfo struct {
 var slurmAllocationTimePattern = regexp.MustCompile("^(?:[0-9]+-)?[0-9]{1,2}:[0-5][0-9]:[0-5][0-9]\\z")
 
 type commonOptions struct {
-	workflowPath    string
-	configPath      string
-	projectDir      string
-	stateDir        string
-	catalogDir      string
-	phase           string
-	format          string
-	resolvedBackend string
-	resolvedRunID   string
-	execution       compiler.ExecutionContext
-	legacyConfig    bool
+	workflowPath         string
+	configPath           string
+	projectDir           string
+	stateDir             string
+	catalogDir           string
+	phase                string
+	format               string
+	resolvedBackend      string
+	resolvedRunID        string
+	execution            compiler.ExecutionContext
+	legacyConfig         bool
+	referenceBuildConfig bool
 }
 
 func NewRootCommand(buildInfo BuildInfo) *cobra.Command {
@@ -1075,6 +1076,7 @@ func addPlanFlags(command *cobra.Command, options *commonOptions) {
 	command.Flags().StringVar(&options.stateDir, "state-dir", "", "Craftmake state directory")
 	command.Flags().BoolVar(&options.legacyConfig, "legacy-config", false, "Load configuration through the legacy compatibility adapter")
 	_ = command.Flags().MarkHidden("legacy-config")
+	command.Flags().BoolVar(&options.referenceBuildConfig, "reference-build-config", false, "Load an immutable Gate 6 reference-build configuration")
 	_ = command.MarkFlagRequired("config")
 }
 
@@ -1087,10 +1089,16 @@ func loadPlan(options *commonOptions) (*compiler.Plan, error) {
 		return nil, configurationError(fmt.Errorf("resolve config path: %w", err))
 	}
 	options.configPath = absoluteConfigPath
+	if options.legacyConfig && options.referenceBuildConfig {
+		return nil, usageError("--legacy-config and --reference-build-config cannot be combined")
+	}
 	var context *compiler.Context
-	if options.legacyConfig {
+	switch {
+	case options.legacyConfig:
 		context, err = otter.LoadLegacy(options.configPath)
-	} else {
+	case options.referenceBuildConfig:
+		context, err = otter.LoadReferenceBuild(options.configPath)
+	default:
 		context, err = otter.Load(options.configPath)
 	}
 	if err != nil {

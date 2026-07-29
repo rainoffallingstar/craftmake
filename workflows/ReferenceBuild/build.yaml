@@ -1,0 +1,130 @@
+name: Gate 6 reference release build
+version: 1
+on:
+  otter:
+    workflow: ReferenceBuild
+    phase: build
+    modes: [REFERENCE]
+defaults:
+  shell: bash
+  environment: otter-core
+  observability:
+    metrics: task
+    capture_stdout: true
+    capture_stderr: true
+    compress_success_logs: true
+jobs:
+  acquire_sources:
+    name: Acquire and verify reference source archives
+    scope: global
+    outputs:
+      fasta_archive: "${{ config.reference_build.cache_dir }}/${{ config.reference_build.fasta_filename }}"
+      gtf_archive: "${{ config.reference_build.cache_dir }}/${{ config.reference_build.gtf_filename }}"
+      source_manifest: "${{ config.reference_build.evidence_dir }}/source-manifest.tsv"
+    resources:
+      cores: 1
+      memory: 4G
+      partition: amd_512
+      time: 02:00:00
+    steps:
+      - name: Download provider-published FASTA and GTF archives
+        run: |
+          set -euo pipefail
+          mkdir -p '${{ config.reference_build.cache_dir }}' '${{ config.reference_build.evidence_dir }}'
+          fetch_and_verify() {
+            local source_url="$1"
+            local expected_md5="$2"
+            local destination_path="$3"
+            local actual_md5
+            if [[ ! -s "${destination_path}" ]]; then
+              temporary_path="${destination_path}.part"
+              rm -f "${temporary_path}"
+              curl --fail --location --retry 5 --retry-all-errors --output "${temporary_path}" "${source_url}"
+              mv "${temporary_path}" "${destination_path}"
+            fi
+            actual_md5="$(md5sum "${destination_path}" | awk '{print $1}')"
+            [[ "${actual_md5}" == "${expected_md5}" ]]
+          }
+          fetch_and_verify '${{ config.reference_build.fasta_url }}' '${{ config.reference_build.fasta_md5 }}' '${{ outputs.fasta_archive }}'
+          fetch_and_verify '${{ config.reference_build.gtf_url }}' '${{ config.reference_build.gtf_md5 }}' '${{ outputs.gtf_archive }}'
+          {
+            printf 'asset\turl\tprovider_md5\tsha256\tpath\n'
+            printf 'fasta\t%s\t%s\t%s\t%s\n' '${{ config.reference_build.fasta_url }}' '${{ config.reference_build.fasta_md5 }}' "$(sha256sum '${{ outputs.fasta_archive }}' | awk '{print $1}')" '${{ outputs.fasta_archive }}'
+            printf 'gtf\t%s\t%s\t%s\t%s\n' '${{ config.reference_build.gtf_url }}' '${{ config.reference_build.gtf_md5 }}' "$(sha256sum '${{ outputs.gtf_archive }}' | awk '{print $1}')" '${{ outputs.gtf_archive }}'
+          } > '${{ outputs.source_manifest }}'
+
+  prepare_lite_assets:
+    name: Derive declared mouse canary-contig FASTA and GTF
+    scope: global
+    needs: [acquire_sources]
+    inputs:
+      fasta_archive: "${{ jobs.acquire_sources.outputs.fasta_archive }}"
+      gtf_archive: "${{ jobs.acquire_sources.outputs.gtf_archive }}"
+    outputs:
+      fasta: "${{ config.reference_build.work_dir }}/fasta/${{ config.reference_build.reference_id }}.fa"
+      gtf: "${{ config.reference_build.work_dir }}/annotations/${{ config.reference_build.reference_id }}.gtf"
+      preparation_manifest: "${{ config.reference_build.evidence_dir }}/prepared-assets.tsv"
+    resources:
+      cores: 2
+      memory: 16G
+      partition: amd_512
+      time: 04:00:00
+    steps:
+      - name: Filter source assets to declared contigs
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname '${{ outputs.fasta }}')" "$(dirname '${{ outputs.gtf }}')" '${{ config.reference_build.evidence_dir }}'
+          temporary_fasta='${{ outputs.fasta }}.part'
+          temporary_gtf='${{ outputs.gtf }}.part'
+          awk -v contigs='${{ config.reference_build.contigs }}' '
+            BEGIN { split(contigs, names, /,/); for (index in names) allowed[names[index]] = 1 }
+            /^>/ { contig = substr($1, 2); keep = (contig in allowed) }
+            keep { print }
+          ' < <(gzip -cd '${{ inputs.fasta_archive }}') > "${temporary_fasta}"
+          awk -v contigs='${{ config.reference_build.contigs }}' '
+            BEGIN { split(contigs, names, /,/); for (index in names) allowed[names[index]] = 1 }
+            /^#/ || ($1 in allowed) { print }
+          ' < <(gzip -cd '${{ inputs.gtf_archive }}') > "${temporary_gtf}"
+          grep -q '^>' "${temporary_fasta}"
+          awk 'BEGIN { feature_count = 0 } !/^#/ { feature_count += 1 } END { exit feature_count == 0 }' "${temporary_gtf}"
+          mv "${temporary_fasta}" '${{ outputs.fasta }}'
+          mv "${temporary_gtf}" '${{ outputs.gtf }}'
+          {
+            printf 'asset\tsha256\tsize_bytes\tpath\n'
+            printf 'fasta\t%s\t%s\t%s\n' "$(sha256sum '${{ outputs.fasta }}' | awk '{print $1}')" "$(stat -c '%s' '${{ outputs.fasta }}')" '${{ outputs.fasta }}'
+            printf 'gtf\t%s\t%s\t%s\n' "$(sha256sum '${{ outputs.gtf }}' | awk '{print $1}')" "$(stat -c '%s' '${{ outputs.gtf }}')" '${{ outputs.gtf }}'
+          } > '${{ outputs.preparation_manifest }}'
+
+  publish_release:
+    name: Build indexes and publish immutable reference release
+    scope: global
+    needs: [prepare_lite_assets]
+    inputs:
+      fasta: "${{ jobs.prepare_lite_assets.outputs.fasta }}"
+      gtf: "${{ jobs.prepare_lite_assets.outputs.gtf }}"
+    outputs:
+      manifest: "${{ config.reference_build.registry_root }}/genomes/${{ config.reference_build.reference_id }}/${{ config.reference_build.release }}/manifest.json"
+    resources:
+      cores: 8
+      memory: 96G
+      partition: amd_512
+      time: 24:00:00
+    steps:
+      - name: Build Bismark Bowtie2 and STAR indexes through Otter
+        run: |
+          set -euo pipefail
+          '${{ config.reference_build.otter_binary }}' reference build \
+            --registry-root '${{ config.reference_build.registry_root }}' \
+            --id '${{ config.reference_build.reference_id }}' \
+            --release '${{ config.reference_build.release }}' \
+            --organism '${{ config.reference_build.organism }}' \
+            --assembly '${{ config.reference_build.assembly }}' \
+            --alias '${{ config.reference_build.aliases }}' \
+            --fasta '${{ inputs.fasta }}' \
+            --gtf '${{ inputs.gtf }}' \
+            --indexes bismark,bowtie2,star \
+            --samtools '${{ config.reference_build.samtools_binary }}' \
+            --bismark-genome-preparation '${{ config.reference_build.bismark_binary }}' \
+            --bowtie2-build '${{ config.reference_build.bowtie2_binary }}' \
+            --star '${{ config.reference_build.star_binary }}' \
+            --star-sjdb-overhang '${{ config.reference_build.star_sjdb_overhang }}'

@@ -114,6 +114,93 @@ func LoadLegacy(path string) (*compiler.Context, error) {
 	}, nil
 }
 
+// LoadReferenceBuild loads the immutable Gate 6 reference-build contract.
+func LoadReferenceBuild(path string) (*compiler.Context, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read reference build configuration %q: %w", path, err)
+	}
+	var raw map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("parse reference build configuration %q: %w", path, err)
+	}
+	normalizeMap(raw)
+	return loadReferenceBuild(path, filepath.Dir(path), raw)
+}
+
+func loadReferenceBuild(path, baseDirectory string, raw map[string]any) (*compiler.Context, error) {
+	requiredFields := map[string]string{
+		"reference_build.run_id":             firstString(raw, "reference_build.run_id"),
+		"reference_build.reference_id":       firstString(raw, "reference_build.reference_id"),
+		"reference_build.release":            firstString(raw, "reference_build.release"),
+		"reference_build.organism":           firstString(raw, "reference_build.organism"),
+		"reference_build.assembly":           firstString(raw, "reference_build.assembly"),
+		"reference_build.aliases":            firstString(raw, "reference_build.aliases"),
+		"reference_build.cache_dir":          firstString(raw, "reference_build.cache_dir"),
+		"reference_build.work_dir":           firstString(raw, "reference_build.work_dir"),
+		"reference_build.registry_root":      firstString(raw, "reference_build.registry_root"),
+		"reference_build.evidence_dir":       firstString(raw, "reference_build.evidence_dir"),
+		"reference_build.fasta_url":          firstString(raw, "reference_build.fasta_url"),
+		"reference_build.fasta_filename":     firstString(raw, "reference_build.fasta_filename"),
+		"reference_build.fasta_md5":          firstString(raw, "reference_build.fasta_md5"),
+		"reference_build.gtf_url":            firstString(raw, "reference_build.gtf_url"),
+		"reference_build.gtf_filename":       firstString(raw, "reference_build.gtf_filename"),
+		"reference_build.gtf_md5":            firstString(raw, "reference_build.gtf_md5"),
+		"reference_build.star_sjdb_overhang": firstString(raw, "reference_build.star_sjdb_overhang"),
+		"reference_build.contigs":            firstString(raw, "reference_build.contigs"),
+		"reference_build.otter_binary":       firstString(raw, "reference_build.otter_binary"),
+		"reference_build.samtools_binary":    firstString(raw, "reference_build.samtools_binary"),
+		"reference_build.bismark_binary":     firstString(raw, "reference_build.bismark_binary"),
+		"reference_build.bowtie2_binary":     firstString(raw, "reference_build.bowtie2_binary"),
+		"reference_build.star_binary":        firstString(raw, "reference_build.star_binary"),
+	}
+	for fieldName, fieldValue := range requiredFields {
+		if strings.TrimSpace(fieldValue) == "" {
+			return nil, fmt.Errorf("reference build configuration requires %s", fieldName)
+		}
+	}
+	for _, pathField := range []string{
+		"reference_build.cache_dir",
+		"reference_build.work_dir",
+		"reference_build.registry_root",
+		"reference_build.evidence_dir",
+		"reference_build.otter_binary",
+		"reference_build.samtools_binary",
+		"reference_build.bismark_binary",
+		"reference_build.bowtie2_binary",
+		"reference_build.star_binary",
+	} {
+		if !filepath.IsAbs(firstString(raw, pathField)) {
+			return nil, fmt.Errorf("reference build configuration requires absolute %s", pathField)
+		}
+	}
+
+	absoluteConfigPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("resolve reference build configuration path: %w", err)
+	}
+	return &compiler.Context{
+		Raw: raw,
+		Workflow: compiler.WorkflowContext{
+			Mode:         "REFERENCE",
+			WorkflowName: "ReferenceBuild",
+			JobID:        firstString(raw, "reference_build.run_id"),
+			UserID:       "reference-builder",
+			Executor:     "craftmake",
+			Backend:      "slurm",
+			Toolchain:    "reference-builder",
+		},
+		Execution: compiler.ExecutionContext{
+			Slurm: compiler.SlurmExecutionContext{Partition: "amd_512", DefaultTime: "1-00:00:00"},
+		},
+		Paths: map[string]string{
+			"config":  absoluteConfigPath,
+			"project": baseDirectory,
+			"state":   filepath.Join(firstString(raw, "reference_build.evidence_dir"), "craftmake-state"),
+		},
+	}, nil
+}
+
 func buildCanonicalConfig(raw map[string]any, baseDirectory string) map[string]any {
 	canonical := cloneMap(raw)
 	output := ensureMap(canonical, "output")
