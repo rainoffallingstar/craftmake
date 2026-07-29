@@ -113,7 +113,7 @@ jobs:
             BEGIN {
               include_all = (contigs == "*")
               split(contigs, names, /,/)
-              for (index in names) allowed[names[index]] = 1
+              for (contig_position in names) allowed[names[contig_position]] = 1
             }
             /^>/ { contig = substr($1, 2); keep = include_all || (contig in allowed) }
             keep { print }
@@ -122,7 +122,7 @@ jobs:
             BEGIN {
               include_all = (contigs == "*")
               split(contigs, names, /,/)
-              for (index in names) allowed[names[index]] = 1
+              for (contig_position in names) allowed[names[contig_position]] = 1
             }
             /^#/ || include_all || ($1 in allowed) { print }
           ' < <(gzip -cd '${{ inputs.gtf_archive }}') > "${temporary_gtf}"
