@@ -46,6 +46,22 @@ func TestLoadReferenceBuildRejectsUnsupportedChecksumAlgorithm(t *testing.T) {
 	}
 }
 
+func TestLoadReferenceBuildRejectsNonPositiveIndexBuildThreads(t *testing.T) {
+	configurationData, err := os.ReadFile(repositoryPath(t, "testdata", "configs", "reference-build.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalidConfiguration := strings.Replace(string(configurationData), "index_build_threads: 1", "index_build_threads: 0", 1)
+	configurationPath := filepath.Join(t.TempDir(), "reference-build.yaml")
+	if err := os.WriteFile(configurationPath, []byte(invalidConfiguration), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = LoadReferenceBuild(configurationPath)
+	if err == nil || !strings.Contains(err.Error(), "positive reference_build.index_build_threads") {
+		t.Fatalf("expected index build thread validation error, got %v", err)
+	}
+}
+
 func TestLoadReferenceBuildRejectsRelativeToolPath(t *testing.T) {
 	configurationData, err := os.ReadFile(repositoryPath(t, "testdata", "configs", "reference-build.yaml"))
 	if err != nil {

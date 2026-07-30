@@ -168,4 +168,5 @@ jobs:
             --bismark-genome-preparation '${{ config.reference_build.bismark_binary }}' \
             --bowtie2-build '${{ config.reference_build.bowtie2_binary }}' \
             --star '${{ config.reference_build.star_binary }}' \
-            --star-sjdb-overhang '${{ config.reference_build.star_sjdb_overhang }}'
+            --star-sjdb-overhang '${{ config.reference_build.star_sjdb_overhang }}' \
+            --index-build-threads '${{ config.reference_build.index_build_threads }}'

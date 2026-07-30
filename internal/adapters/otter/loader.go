@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/fallingstar10/craftmake/internal/compiler"
@@ -149,6 +150,7 @@ func loadReferenceBuild(path, baseDirectory string, raw map[string]any) (*compil
 		"reference_build.gtf_checksum_algorithm":   firstString(raw, "reference_build.gtf_checksum_algorithm"),
 		"reference_build.gtf_checksum_value":       firstString(raw, "reference_build.gtf_checksum_value"),
 		"reference_build.star_sjdb_overhang":       firstString(raw, "reference_build.star_sjdb_overhang"),
+		"reference_build.index_build_threads":      firstString(raw, "reference_build.index_build_threads"),
 		"reference_build.contigs":                  firstString(raw, "reference_build.contigs"),
 		"reference_build.otter_binary":             firstString(raw, "reference_build.otter_binary"),
 		"reference_build.samtools_binary":          firstString(raw, "reference_build.samtools_binary"),
@@ -170,6 +172,11 @@ func loadReferenceBuild(path, baseDirectory string, raw map[string]any) (*compil
 			return nil, fmt.Errorf("reference build configuration has unsupported %s %q; supported values are md5 and bsd-sum", checksumAlgorithmField, checksumAlgorithm)
 		}
 	}
+	indexBuildThreads, err := strconv.Atoi(firstString(raw, "reference_build.index_build_threads"))
+	if err != nil || indexBuildThreads < 1 {
+		return nil, fmt.Errorf("reference build configuration requires positive reference_build.index_build_threads")
+	}
+
 	for _, pathField := range []string{
 		"reference_build.cache_dir",
 		"reference_build.work_dir",

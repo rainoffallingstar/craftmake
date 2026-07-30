@@ -19,6 +19,7 @@ reference_build:
   gtf_checksum_value: c5125258a0a2c5250ddb4c192abbf4e8
   contigs: 19
   star_sjdb_overhang: 149
+  index_build_threads: 1
   otter_binary: /gate6/bin/otter
   samtools_binary: /gate6/envs/otter-core/bin/samtools
   bismark_binary: /gate6/envs/otter-core/bin/bismark_genome_preparation
