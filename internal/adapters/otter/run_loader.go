@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/fallingstar10/craftmake/internal/compiler"
+	"github.com/fallingstar10/craftmake/pkg/protocol"
 	"gopkg.in/yaml.v3"
 )
 
@@ -83,7 +84,20 @@ func Load(path string) (*compiler.Context, error) {
 		})
 	}
 
-	raw := buildRunCompatibilityConfig(snapshot, rawDirectory, mode, pdxMode, primaryReference, graftReference, hostReference)
+	expressionReference := primaryReference
+	if pdxMode {
+		expressionReference = graftReference
+	}
+	expressionSpecies, err := seq2matSpeciesForReference(*expressionReference)
+	if err != nil {
+		return nil, err
+	}
+
+	raw := buildRunCompatibilityConfig(snapshot, rawDirectory, mode, pdxMode, primaryReference, graftReference, hostReference, expressionSpecies)
+	phaseResources, err := phaseResourceRequests(snapshot.Execution.Resources)
+	if err != nil {
+		return nil, err
+	}
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("resolve run snapshot path: %w", err)
@@ -102,6 +116,7 @@ func Load(path string) (*compiler.Context, error) {
 			PDXMode:          pdxMode,
 		},
 		Execution: compiler.ExecutionContext{
+			PhaseResources: phaseResources,
 			Slurm: compiler.SlurmExecutionContext{
 				Partition:   snapshot.Execution.Slurm.Partition.Value,
 				Account:     snapshot.Execution.Slurm.Account.Value,
@@ -124,6 +139,23 @@ func Load(path string) (*compiler.Context, error) {
 			"metrics":  snapshot.Paths.Metrics,
 		},
 	}, nil
+}
+
+func phaseResourceRequests(resources projectResources) (map[string]protocol.ResourceRequest, error) {
+	requests := make(map[string]protocol.ResourceRequest, len(resources.Phases))
+	for phaseName, phaseResource := range resources.Phases {
+		memoryBytes, err := compiler.ParseMemory(phaseResource.Memory)
+		if err != nil {
+			return nil, fmt.Errorf("execution.resources.phases.%s.memory: %w", phaseName, err)
+		}
+		requests[phaseName] = protocol.ResourceRequest{
+			Cores:      phaseResource.Cores,
+			MemoryByte: memoryBytes,
+			Partition:  phaseResource.Partition,
+			Time:       phaseResource.Time,
+		}
+	}
+	return requests, nil
 }
 
 func validateRunSnapshot(snapshot *runSnapshot) error {
@@ -348,12 +380,19 @@ func selectIndexPath(reference resolvedReference, mode string) string {
 			return path
 		}
 	} else if path := selectIndexByType(reference.Indexes, "bismark"); path != "" {
-		return path
+		return bismarkExecutionGenomeDirectory(path)
 	}
 	if len(reference.Indexes) > 0 {
 		return reference.Indexes[0].Path
 	}
 	return ""
+}
+
+func bismarkExecutionGenomeDirectory(indexRoot string) string {
+	if strings.TrimSpace(indexRoot) == "" {
+		return ""
+	}
+	return filepath.Join(indexRoot, "genome")
 }
 
 func selectIndexByType(indexes []resolvedAsset, indexType string) string {
@@ -384,6 +423,22 @@ func selectAnnotationPath(reference resolvedReference, annotationType string) st
 	return ""
 }
 
+func seq2matSpeciesForReference(reference resolvedReference) (string, error) {
+	normalizedOrganism := strings.ToLower(strings.TrimSpace(reference.Organism))
+	switch normalizedOrganism {
+	case "human", "homo sapiens":
+		return "human", nil
+	case "mouse", "mus musculus":
+		return "mouse", nil
+	default:
+		return "", fmt.Errorf(
+			"reference %q has unsupported organism %q for seq2mat",
+			reference.ID,
+			reference.Organism,
+		)
+	}
+}
+
 func buildRunCompatibilityConfig(
 	snapshot runSnapshot,
 	rawDirectory string,
@@ -392,6 +447,7 @@ func buildRunCompatibilityConfig(
 	primaryReference *resolvedReference,
 	graftReference *resolvedReference,
 	hostReference *resolvedReference,
+	expressionSpecies string,
 ) map[string]any {
 	workflowDirectory := snapshot.Paths.Work
 	qualityControlDirectory := filepath.Join(workflowDirectory, "QC")
@@ -430,6 +486,7 @@ func buildRunCompatibilityConfig(
 		"directories": map[string]any{
 			"work":             workflowDirectory,
 			"selfconfig":       snapshot.Project.Root,
+			"qctb_config":      filepath.Join(snapshot.Paths.State, "config.yaml"),
 			"sid_log":          snapshot.Paths.Logs,
 			"methylation_call": methylationDirectory,
 			"qualimap":         filepath.Join(qualityControlDirectory, "qualimap"),
@@ -451,11 +508,12 @@ func buildRunCompatibilityConfig(
 			"userid":    snapshot.Project.ID,
 			"mode":      mode,
 			"species": map[string]any{
-				"name":      speciesNames(snapshot.References.Resolved),
-				"primary":   primaryName,
-				"secondary": hostName,
-				"graft":     graftName,
-				"host":      hostName,
+				"name":       speciesNames(snapshot.References.Resolved),
+				"primary":    primaryName,
+				"secondary":  hostName,
+				"graft":      graftName,
+				"host":       hostName,
+				"expression": expressionSpecies,
 			},
 			"adapters": map[string]any{
 				"error": float64(0.2),
@@ -471,7 +529,8 @@ func buildRunCompatibilityConfig(
 		},
 		"reference": buildReferenceConfig(mode, primaryReference, graftReference, hostReference),
 		"metadata": map[string]any{
-			"sids": sampleIDs(snapshot.Samples),
+			"sids":         sampleIDs(snapshot.Samples),
+			"group_levels": sampleGroupLevelCount(snapshot.Samples),
 		},
 		"execution": map[string]any{
 			"executor": snapshot.Execution.Executor.Value,
@@ -521,6 +580,18 @@ func sampleIDs(samples []sampleRecord) []string {
 		ids = append(ids, sample.ID)
 	}
 	return ids
+}
+
+func sampleGroupLevelCount(samples []sampleRecord) int {
+	uniqueGroups := make(map[string]struct{}, len(samples))
+	for _, sample := range samples {
+		groupName := strings.TrimSpace(sample.Group)
+		if groupName == "" {
+			continue
+		}
+		uniqueGroups[groupName] = struct{}{}
+	}
+	return len(uniqueGroups)
 }
 
 func sampleAdapters(samples []sampleRecord, readOne bool) []string {

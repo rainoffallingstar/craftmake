@@ -227,11 +227,22 @@ func buildCanonicalConfig(raw map[string]any, baseDirectory string) map[string]a
 	setDefault(output, "workflow_dir", firstString(raw, "output.workflow_dir", "directories.workflowdir"))
 	setDefault(output, "analysis_dir", firstString(raw, "output.analysis_dir", "directories.analysisdir"))
 	directories := ensureMap(canonical, "directories")
+	workflow := ensureMap(canonical, "workflow")
+	workflowSpecies := ensureMap(workflow, "species")
+	setDefault(
+		workflowSpecies,
+		"expression",
+		firstString(raw, "workflow.species.graft", "workflow.species.primary", "species1", "species"),
+	)
 	setDefault(directories, "sid_log", firstString(raw, "directories.sid_log", "output.log_dir"))
 	setDefault(directories, "methylation_call", firstString(raw, "directories.methylation_call", "directories.outdir_mcall"))
 	setDefault(directories, "qualimap", firstString(raw, "directories.qualimap", "directories.outdir_qualimap"))
 	setDefault(directories, "qc_summary", firstString(raw, "directories.qc_summary", "directories.qcsummary"))
 	setDefault(directories, "beta_matrix", firstString(raw, "directories.beta_matrix", "directories.outdir_betam"))
+	selfConfigDirectory := firstString(raw, "directories.selfconfig")
+	if firstString(raw, "directories.qctb_config") == "" && selfConfigDirectory != "" {
+		directories["qctb_config"] = filepath.Join(selfConfigDirectory, "config.yaml")
+	}
 	normalizeRuntimePaths(canonical)
 	canonical["config_dir"] = filepath.Clean(baseDirectory)
 	return canonical

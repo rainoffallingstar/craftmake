@@ -7,7 +7,7 @@ on:
     modes: [RNASEQ]
 defaults:
   shell: bash
-  environment: otter-core
+  environment: otter-core-bismark-rust-3.1.0-r2
   observability:
     metrics: task
     capture_stdout: true
@@ -32,7 +32,7 @@ jobs:
     resources:
       cores: 1
       memory: 1G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Write validated BeaverRNASEQPDX step3 artifact manifest
         run: |
@@ -108,7 +108,7 @@ jobs:
     resources:
       cores: 1
       memory: 1G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Write validated BeaverRNASEQPDX species QC artifact manifest
         run: |
@@ -173,12 +173,12 @@ jobs:
     resources:
       cores: 5
       memory: 8G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Build graft expression matrices
         run: |
           mkdir -p '${{ config.directories.beta_matrix }}'
-          seq2mat --htseq_dir '${{ config.directories.methylation_call }}' --output_dir '${{ config.directories.beta_matrix }}' --postfix '_${{ config.workflow.species.graft }}.txt'
+          seq2mat --htseq_dir '${{ config.directories.methylation_call }}' --output_dir '${{ config.directories.beta_matrix }}' --postfix '_${{ config.workflow.species.graft }}.txt' --species '${{ config.workflow.species.expression }}'
 
   qc_summary:
     name: Build BeaverRNASEQPDX QC summary
@@ -187,32 +187,16 @@ jobs:
     inputs:
       sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
       species_qc_artifacts: "${{ jobs.species_qc_artifacts.outputs.ready }}"
-      self_config: "${{ config.directories.selfconfig }}/config.yaml"
+      run_config: "${{ paths.config }}"
     outputs:
       report: "${{ config.directories.qc_summary }}/qc_summary.xlsx"
     resources:
       cores: 5
       memory: 8G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Run RNA-seq PDX QC summary
-        environment: otter-core
+        environment: otter-core-bismark-rust-3.1.0-r2
         run: |
           mkdir -p '${{ config.directories.qc_summary }}'
-          source_config='${{ inputs.self_config }}'
-          qctb_config="$(mktemp "${TMPDIR:-/tmp}/craftmake-qctb-rnaseq-pdx.XXXXXX.yaml")"
-          trap 'rm -f "$qctb_config"' EXIT
-          python - "$source_config" "$qctb_config" '${{ config.workflow.species.graft }}' <<'PY'
-          import sys
-          import yaml
-
-          source_path, output_path, graft_species = sys.argv[1:]
-          with open(source_path, "r", encoding="utf-8") as source_file:
-              configuration = yaml.safe_load(source_file)
-          workflow_configuration = configuration.setdefault("workflow", {})
-          species_configuration = workflow_configuration.setdefault("species", {})
-          species_configuration["name"] = graft_species
-          with open(output_path, "w", encoding="utf-8") as output_file:
-              yaml.safe_dump(configuration, output_file, sort_keys=False)
-          PY
-          qctb --config "$qctb_config" --output '${{ outputs.report }}' --rnaseq
+          qctb --config '${{ inputs.run_config }}' --output '${{ outputs.report }}' --rnaseq

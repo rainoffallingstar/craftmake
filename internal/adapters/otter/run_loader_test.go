@@ -4,9 +4,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/fallingstar10/craftmake/internal/compiler"
+	"github.com/fallingstar10/craftmake/internal/spec"
 )
 
 func TestLoadRunV1BuildsCompilerContext(t *testing.T) {
@@ -27,15 +31,24 @@ func TestLoadRunV1BuildsCompilerContext(t *testing.T) {
 	if len(context.Samples) != 1 || context.Samples[0].Read1 != "/project/data/S01_R1.fastq.gz" || context.Samples[0].Adapter1 != "AUTO" {
 		t.Fatalf("unexpected sample context: %#v", context.Samples)
 	}
-	if len(context.Species) != 2 || context.Species[0].Name != "hg38" || context.Species[1].Name != "mm39" {
-		t.Fatalf("unexpected species context: %#v", context.Species)
+	metadata := context.Raw["metadata"].(map[string]any)
+	if metadata["group_levels"] != 0 {
+		t.Fatalf("single sample without a group should expose zero group levels: %#v", metadata)
+	}
+	workflow := context.Raw["workflow"].(map[string]any)
+	species := workflow["species"].(map[string]any)
+	if species["expression"] != "human" {
+		t.Fatalf("expected human expression species, got %#v", species)
 	}
 	output := context.Raw["output"].(map[string]any)
 	if output["raw_dir"] != "/project/data" || output["trim_dir"] != "/project/runs/example/work/trim" || output["analysis_dir"] != "/project/runs/example/results" {
 		t.Fatalf("unexpected derived output paths: %#v", output)
 	}
 	directories := context.Raw["directories"].(map[string]any)
-	if directories["sid_log"] != "/project/runs/example/logs" || directories["methylation_call"] != "/project/runs/example/work/expression" {
+	if directories["sid_log"] != "/project/runs/example/logs" ||
+		directories["methylation_call"] != "/project/runs/example/work/expression" ||
+		directories["selfconfig"] != "/project" ||
+		directories["qctb_config"] != "/project/runs/example/state/config.yaml" {
 		t.Fatalf("unexpected derived directories: %#v", directories)
 	}
 	reference := context.Raw["reference"].(map[string]any)
@@ -46,6 +59,95 @@ func TestLoadRunV1BuildsCompilerContext(t *testing.T) {
 	if rnaseq["graft_gtf"] != "/refs/hg38.gtf" || rnaseq["primary_reference"] != "/refs/hg38-star" {
 		t.Fatalf("unexpected RNA references: %#v", rnaseq)
 	}
+}
+
+func TestSeq2matSpeciesForReference(t *testing.T) {
+	testCases := []struct {
+		name      string
+		reference resolvedReference
+		want      string
+		wantError string
+	}{
+		{name: "human", reference: resolvedReference{ID: "hg38", Organism: "Homo sapiens"}, want: "human"},
+		{name: "mouse", reference: resolvedReference{ID: "mm10", Organism: "Mus musculus"}, want: "mouse"},
+		{name: "unsupported", reference: resolvedReference{ID: "unknown", Organism: "Danio rerio"}, wantError: "unsupported organism"},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			got, err := seq2matSpeciesForReference(testCase.reference)
+			if testCase.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), testCase.wantError) {
+					t.Fatalf("expected error containing %q, got %v", testCase.wantError, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != testCase.want {
+				t.Fatalf("seq2matSpeciesForReference() = %q, want %q", got, testCase.want)
+			}
+		})
+	}
+}
+
+func TestSampleGroupLevelCount(t *testing.T) {
+	testCases := []struct {
+		name    string
+		samples []sampleRecord
+		want    int
+	}{
+		{name: "no groups", samples: []sampleRecord{{ID: "S01"}}, want: 0},
+		{name: "one group", samples: []sampleRecord{{ID: "S01", Group: "case"}, {ID: "S02", Group: "case"}}, want: 1},
+		{name: "two groups", samples: []sampleRecord{{ID: "S01", Group: "case"}, {ID: "S02", Group: "control"}}, want: 2},
+		{name: "trim whitespace", samples: []sampleRecord{{ID: "S01", Group: " case "}, {ID: "S02", Group: "case"}}, want: 1},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := sampleGroupLevelCount(testCase.samples); got != testCase.want {
+				t.Fatalf("sampleGroupLevelCount() = %d, want %d", got, testCase.want)
+			}
+		})
+	}
+}
+
+func TestLoadRunV1CompilesRRBSQCTBInputFromCanonicalRun(t *testing.T) {
+	repositoryRoot := repositoryRootForRunLoaderTest(t)
+	workflow, err := spec.Load(filepath.Join(repositoryRoot, "workflows", "BeaverBS", "step3-check.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	context, err := Load(writeRunSnapshot(t, runSnapshotYAML("rrbs", "craftmake", "local", "true", false)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := compiler.Compile(workflow, context)
+	if err != nil {
+		t.Fatal(err)
+	}
+	qualityControlTask := plan.TaskByID["BeaverBS/step3-check/qc_summary"]
+	if qualityControlTask == nil {
+		t.Fatal("compiled RRBS plan is missing the QCTB summary task")
+	}
+	qualityControlInput := qualityControlTask.Inputs["run_config"]
+	if len(qualityControlInput) != 1 || !strings.HasSuffix(qualityControlInput[0], "/run.yaml") {
+		t.Fatalf("QCTB run_config input = %#v, want the immutable run snapshot", qualityControlInput)
+	}
+	if !strings.Contains(qualityControlTask.Steps[0].Command, "qctb --config '"+qualityControlInput[0]+"'") {
+		t.Fatalf("QCTB command does not consume its declared input: %s", qualityControlTask.Steps[0].Command)
+	}
+}
+
+func repositoryRootForRunLoaderTest(t *testing.T) string {
+	t.Helper()
+	_, currentFile, _, available := runtime.Caller(0)
+	if !available {
+		t.Fatal("resolve run loader test location")
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
 }
 
 func TestLoadRunV1PreservesLegacyEquivalentToolchainContract(t *testing.T) {
@@ -203,6 +305,7 @@ references:
     - role: %s
       id: hg38
       release: GRCh38
+      organism: Homo sapiens
       registry_root: /refs
       manifest_digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
       fasta:

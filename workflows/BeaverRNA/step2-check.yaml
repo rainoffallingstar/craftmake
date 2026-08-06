@@ -7,7 +7,7 @@ on:
     modes: [RNASEQ]
 defaults:
   shell: bash
-  environment: otter-core
+  environment: otter-core-bismark-rust-3.1.0-r2
   observability:
     metrics: task
     capture_stdout: true
@@ -33,7 +33,7 @@ jobs:
     resources:
       cores: 1
       memory: 1G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Write validated BeaverRNA step2 artifact manifest
         run: |
@@ -113,12 +113,12 @@ jobs:
     resources:
       cores: 5
       memory: 8G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Build expression matrices
         run: |
           mkdir -p '${{ config.directories.beta_matrix }}'
-          seq2mat --htseq_dir '${{ config.directories.methylation_call }}' --output_dir '${{ config.directories.beta_matrix }}' --postfix '_${{ config.workflow.species.graft }}.txt'
+          seq2mat --htseq_dir '${{ config.directories.methylation_call }}' --output_dir '${{ config.directories.beta_matrix }}' --postfix '_${{ config.workflow.species.graft }}.txt' --species '${{ config.workflow.species.expression }}'
 
   rnaseq_splicing:
     name: Run BeaverRNA splicing analysis
@@ -132,7 +132,7 @@ jobs:
     resources:
       cores: 20
       memory: 32G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Run or classify RNA splicing
         run: |
@@ -182,15 +182,15 @@ jobs:
     dimensions: []
     inputs:
       sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
-      self_config: "${{ config.directories.selfconfig }}/config.yaml"
+      run_config: "${{ paths.config }}"
     outputs:
       report: "${{ config.directories.qc_summary }}/qc_summary.xlsx"
     resources:
       cores: 5
       memory: 8G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Run RNA-seq QC summary
         run: |
           mkdir -p '${{ config.directories.qc_summary }}'
-          qctb --config '${{ inputs.self_config }}' --output '${{ outputs.report }}' --rnaseq
+          qctb --config '${{ inputs.run_config }}' --output '${{ outputs.report }}' --rnaseq
