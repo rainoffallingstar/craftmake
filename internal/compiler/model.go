@@ -15,7 +15,8 @@ type Context struct {
 }
 
 type ExecutionContext struct {
-	Slurm SlurmExecutionContext `json:"slurm,omitempty"`
+	Slurm          SlurmExecutionContext               `json:"slurm,omitempty"`
+	PhaseResources map[string]protocol.ResourceRequest `json:"phase_resources,omitempty"`
 }
 
 type SlurmExecutionContext struct {

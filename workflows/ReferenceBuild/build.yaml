@@ -7,7 +7,7 @@ on:
     modes: [REFERENCE]
 defaults:
   shell: bash
-  environment: otter-core
+  environment: otter-core-bismark-rust-3.1.0-r2
   observability:
     metrics: task
     capture_stdout: true
@@ -22,8 +22,8 @@ jobs:
       gtf_archive: "${{ config.reference_build.cache_dir }}/${{ config.reference_build.gtf_filename }}"
       source_manifest: "${{ config.reference_build.evidence_dir }}/source-manifest.tsv"
     resources:
-      cores: 1
-      memory: 4G
+      cores: 2
+      memory: 8G
       partition: amd_512
       time: 3-00:00:00
     steps:
@@ -98,8 +98,8 @@ jobs:
       gtf: "${{ config.reference_build.work_dir }}/annotations/${{ config.reference_build.reference_id }}.gtf"
       preparation_manifest: "${{ config.reference_build.evidence_dir }}/prepared-assets.tsv"
     resources:
-      cores: 2
-      memory: 16G
+      cores: 4
+      memory: 32G
       partition: amd_512
       time: 04:00:00
     steps:
@@ -146,8 +146,8 @@ jobs:
     outputs:
       manifest: "${{ config.reference_build.registry_root }}/genomes/${{ config.reference_build.reference_id }}/${{ config.reference_build.release }}/manifest.json"
     resources:
-      cores: 8
-      memory: 96G
+      cores: 16
+      memory: 192G
       partition: amd_512
       time: 24:00:00
     steps:

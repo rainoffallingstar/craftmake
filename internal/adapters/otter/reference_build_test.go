@@ -51,7 +51,7 @@ func TestLoadReferenceBuildRejectsNonPositiveIndexBuildThreads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	invalidConfiguration := strings.Replace(string(configurationData), "index_build_threads: 1", "index_build_threads: 0", 1)
+	invalidConfiguration := strings.Replace(string(configurationData), "index_build_threads: 16", "index_build_threads: 0", 1)
 	configurationPath := filepath.Join(t.TempDir(), "reference-build.yaml")
 	if err := os.WriteFile(configurationPath, []byte(invalidConfiguration), 0o644); err != nil {
 		t.Fatal(err)

@@ -124,6 +124,7 @@ type resolvedReference struct {
 	Role           string          `yaml:"role"`
 	ID             string          `yaml:"id"`
 	Release        string          `yaml:"release"`
+	Organism       string          `yaml:"organism,omitempty"`
 	RegistryRoot   string          `yaml:"registry_root"`
 	ManifestDigest string          `yaml:"manifest_digest"`
 	Fasta          resolvedAsset   `yaml:"fasta"`

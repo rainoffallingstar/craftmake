@@ -21,8 +21,8 @@ func TestOpenInitializesCurrentSchemaVersion(t *testing.T) {
 	}
 	defer stateStore.Close()
 
-	assertMigrationVersions(t, stateStore.database, []int{1, 2, 3, 4, 5})
-	for _, indexName := range []string{"idx_submissions_run_status", "idx_attempts_submission", "idx_attempts_task_status_finished", "idx_artifacts_attempt_role", "idx_runs_resumed_from", "idx_tasks_cache_decision"} {
+	assertMigrationVersions(t, stateStore.database, []int{1, 2, 3, 4, 5, 6, 7})
+	for _, indexName := range []string{"idx_submissions_run_status", "idx_attempts_submission", "idx_attempts_task_status_finished", "idx_artifacts_attempt_role", "idx_runs_resumed_from", "idx_tasks_cache_decision", "idx_runtime_incidents_run", "idx_runtime_incidents_category"} {
 		if !databaseObjectExists(t, stateStore.database, "index", indexName) {
 			t.Fatalf("expected current schema index %q", indexName)
 		}
@@ -79,7 +79,7 @@ func TestOpenUpgradesVersionOneDatabaseWithoutLosingData(t *testing.T) {
 	}
 	defer stateStore.Close()
 
-	assertMigrationVersions(t, stateStore.database, []int{1, 2, 3, 4, 5})
+	assertMigrationVersions(t, stateStore.database, []int{1, 2, 3, 4, 5, 6, 7})
 	var workflowName string
 	if err := stateStore.database.QueryRow(`SELECT workflow FROM runs WHERE run_id='legacy-run'`).Scan(&workflowName); err != nil {
 		t.Fatal(err)
@@ -125,7 +125,7 @@ func TestOpenUpgradesVersionTwoDatabaseWithoutLosingArtifactData(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer stateStore.Close()
-	assertMigrationVersions(t, stateStore.database, []int{1, 2, 3, 4, 5})
+	assertMigrationVersions(t, stateStore.database, []int{1, 2, 3, 4, 5, 6, 7})
 
 	var sizeBytes, modificationTime int64
 	var validationStatus string
@@ -172,7 +172,7 @@ func TestOpenUpgradesVersionThreeDatabaseAndSupportsResumeLineage(t *testing.T) 
 		t.Fatal(err)
 	}
 	defer stateStore.Close()
-	assertMigrationVersions(t, stateStore.database, []int{1, 2, 3, 4, 5})
+	assertMigrationVersions(t, stateStore.database, []int{1, 2, 3, 4, 5, 6, 7})
 
 	if err := stateStore.CreateRun(t.Context(), Run{
 		ID:               "resumed-run",
@@ -233,7 +233,7 @@ func TestOpenUpgradesVersionFourDatabaseWithCacheDecisionColumns(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer stateStore.Close()
-	assertMigrationVersions(t, stateStore.database, []int{1, 2, 3, 4, 5})
+	assertMigrationVersions(t, stateStore.database, []int{1, 2, 3, 4, 5, 6, 7})
 
 	if err := stateStore.UpsertTask(t.Context(), TaskInstance{
 		RunID:                 "cache-run",
@@ -285,7 +285,7 @@ func TestOpenIsIdempotentAtCurrentSchemaVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer secondStore.Close()
-	assertMigrationVersions(t, secondStore.database, []int{1, 2, 3, 4, 5})
+	assertMigrationVersions(t, secondStore.database, []int{1, 2, 3, 4, 5, 6, 7})
 
 	var migrationCount int
 	if err := secondStore.database.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&migrationCount); err != nil {
@@ -330,7 +330,7 @@ func TestOpenSerializesConcurrentInitialMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer stateStore.Close()
-	assertMigrationVersions(t, stateStore.database, []int{1, 2, 3, 4, 5})
+	assertMigrationVersions(t, stateStore.database, []int{1, 2, 3, 4, 5, 6, 7})
 }
 
 func TestOpenRejectsDatabaseFromNewerCraftmakeVersion(t *testing.T) {

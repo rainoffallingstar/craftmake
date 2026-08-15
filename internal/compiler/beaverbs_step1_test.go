@@ -25,11 +25,11 @@ func TestCompileBeaverBSStep1Fixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Tasks) != 6 || len(plan.Submissions) != 6 {
-		t.Fatalf("expected six tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
+	if len(plan.Tasks) != 12 || len(plan.Submissions) != 12 {
+		t.Fatalf("expected twelve tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
 	}
-	if len(plan.Order) != 6 {
-		t.Fatalf("expected six tasks in topological order, got %d", len(plan.Order))
+	if len(plan.Order) != 12 {
+		t.Fatalf("expected twelve tasks in topological order, got %d", len(plan.Order))
 	}
 
 	fastqcBeforeSampleA := plan.TaskByID["BeaverBS/step1/fastqc_before/sample=sample-a"]

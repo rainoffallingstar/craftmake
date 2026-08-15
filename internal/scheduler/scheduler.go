@@ -39,6 +39,7 @@ type Options struct {
 	Version           string
 	RunID             string
 	ResumedFromRunID  string
+	LoaderKind        string
 	ControllerLogger  *controllerlog.Logger
 	ControllerLogPath string
 }
@@ -160,6 +161,7 @@ func (taskScheduler *Scheduler) Run(ctx context.Context) (string, error) {
 		Backend:          taskScheduler.options.Backend.Name(),
 		CraftmakeVersion: taskScheduler.options.Version,
 		ResumedFromRunID: taskScheduler.options.ResumedFromRunID,
+		LoaderKind:       taskScheduler.options.LoaderKind,
 		Status:           "running",
 		StartedAt:        startedAt,
 	}); err != nil {
@@ -871,6 +873,39 @@ func (taskScheduler *Scheduler) finishTaskAttempt(ctx context.Context, runID str
 	if outcome.Err != nil && result.Error == "" {
 		result.Error = outcome.Err.Error()
 	}
+	backendJobID := ""
+	if outcome.Result != nil {
+		backendJobID = outcome.Result.BackendID
+	}
+	if status != "succeeded" {
+		result.Incident = protocol.ClassifyTaskIncident(*result, taskScheduler.options.Backend.Name())
+		if result.Incident != nil {
+			result.Incident.BackendJobID = backendJobID
+			result.Incident.EvidencePaths = []string{attempt.manifest.ResultPath}
+			_ = taskScheduler.store.SaveRuntimeIncident(ctx, store.RuntimeIncident{
+				ID:                attempt.attemptID + "-incident",
+				RunID:             runID,
+				AttemptID:         attempt.attemptID,
+				SchemaVersion:     result.Incident.SchemaVersion,
+				Category:          string(result.Incident.Category),
+				Scope:             string(result.Incident.Scope),
+				RetrySafe:         result.Incident.RetrySafe,
+				RetryPolicy:       string(result.Incident.RetryPolicy),
+				Owner:             result.Incident.Owner,
+				Escalation:        result.Incident.Escalation,
+				RemediationStatus: string(result.Incident.RemediationStatus),
+				Summary:           result.Incident.Summary,
+				FirstObservedAt:   result.Incident.FirstObservedAt,
+				Executor:          result.Incident.Executor,
+				Backend:           result.Incident.Backend,
+				BackendJobID:      result.Incident.BackendJobID,
+				ExitCode:          &result.Incident.ExitCode,
+				Signal:            result.Incident.Signal,
+				DiagnosticPaths:   result.Incident.DiagnosticPaths,
+				EvidencePaths:     result.Incident.EvidencePaths,
+			})
+		}
+	}
 	artifacts := collectTaskArtifacts(taskScheduler.options.ProjectDirectory, attempt.task)
 	_ = taskScheduler.store.FinishAttempt(ctx, attempt.attemptID, status, result, artifacts)
 	collectedMetrics := &metrics.TaskMetrics{Source: "artifact_snapshot", Quality: "metadata", Raw: map[string]string{}}
@@ -882,10 +917,6 @@ func (taskScheduler *Scheduler) finishTaskAttempt(ctx context.Context, runID str
 	collectedMetrics.OutputArtifactBytes = &outputArtifactBytes
 	_ = taskScheduler.store.SaveMetrics(ctx, attempt.attemptID, collectedMetrics, int64(attempt.resources.Cores), attempt.resources.MemoryByte)
 	_ = taskScheduler.store.UpdateTaskStatus(ctx, runID, attempt.task.ID, status)
-	backendJobID := ""
-	if outcome.Result != nil {
-		backendJobID = outcome.Result.BackendID
-	}
 	taskScheduler.controllerLogger.Log(ctx, controllerlog.Event{
 		Timestamp:            result.FinishedAt,
 		Level:                eventLevelForStatus(status),
@@ -901,13 +932,26 @@ func (taskScheduler *Scheduler) finishTaskAttempt(ctx context.Context, runID str
 		DurationMilliseconds: durationMilliseconds(result.StartedAt, result.FinishedAt),
 		Error:                result.Error,
 		Details: map[string]any{
-			"exit_code":      result.ExitCode,
-			"metric_source":  collectedMetrics.Source,
-			"metric_quality": collectedMetrics.Quality,
-			"result_path":    attempt.manifest.ResultPath,
+			"exit_code":           result.ExitCode,
+			"metric_source":       collectedMetrics.Source,
+			"metric_quality":      collectedMetrics.Quality,
+			"result_path":         attempt.manifest.ResultPath,
+			"incident_category":   incidentCategory(result.Incident),
+			"incident_retry_safe": incidentRetrySafe(result.Incident),
 		},
 	})
 	return status
+}
+
+func incidentCategory(incident *protocol.Incident) string {
+	if incident == nil {
+		return ""
+	}
+	return string(incident.Category)
+}
+
+func incidentRetrySafe(incident *protocol.Incident) bool {
+	return incident != nil && incident.RetrySafe
 }
 
 func collectTaskArtifacts(projectDirectory string, task *compiler.Task) []store.Artifact {

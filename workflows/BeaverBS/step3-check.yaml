@@ -33,7 +33,7 @@ jobs:
     resources:
       cores: 1
       memory: 1G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Write validated sample artifact manifest
         run: |
@@ -108,12 +108,13 @@ jobs:
     dimensions: []
     inputs:
       genome: "${{ config.reference.graft_fasta }}"
+      annotation: "${{ config.reference.rnaseq.graft_gtf }}"
     outputs:
       reference_cpgs: "${{ config.directories.methylation_call }}/methrixh5/reference_cpgs.ron"
     resources:
       cores: 1
-      memory: 4G
-      partition: cpu
+      memory: 34G
+      partition: amd_512
     steps:
       - name: Prepare CpG reference
         run: |
@@ -127,11 +128,12 @@ jobs:
           fi
           reference_directory="$(dirname "$reference_path")"
           genome_key='${{ config.workflow.species.graft }}'
-          annotation_path=''
-          for candidate in "$reference_directory/$genome_key.gtf" "$reference_directory/$genome_key.gtf.gz"; do
-            if [ -f "$candidate" ]; then annotation_path="$candidate"; break; fi
-          done
-          if [ -n "$annotation_path" ]; then cp -f "$annotation_path" "$(dirname "$output_path")/"; fi
+          annotation_path='${{ inputs.annotation }}'
+          if [[ -L "$annotation_path" || ! -f "$annotation_path" ]]; then
+            printf 'Methrix annotation must be a regular resolved GTF: %s\n' "$annotation_path" >&2
+            exit 1
+          fi
+          install -m 0644 "$annotation_path" "$(dirname "$output_path")/$genome_key.gtf"
           if [[ "$reference_path" == *.ron || "$reference_path" == *.con ]]; then
             cp -f "$reference_path" "$output_path"
           elif [ -f "${reference_path}.ron" ]; then
@@ -172,13 +174,13 @@ jobs:
     resources:
       cores: 10
       memory: 34G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Build Methrix object
         run: |
           mkdir -p '${{ config.directories.methylation_call }}/methrixh5'
           methx_cli="${METHX:-methx}"
-          "$methx_cli" process --input '${{ config.directories.methylation_call }}' --output '${{ config.directories.methylation_call }}/methrixh5' --genome '${{ inputs.reference_cpgs }}' --threads '${{ resources.cores }}'
+          "$methx_cli" process --input '${{ config.directories.methylation_call }}' --output '${{ config.directories.methylation_call }}/methrixh5' --genome '${{ inputs.reference_cpgs }}' --annotation-dir '${{ config.directories.methylation_call }}/methrixh5' --threads '${{ resources.cores }}'
 
   bismark_report:
     name: Build Bismark sample report
@@ -190,19 +192,18 @@ jobs:
       alignment_report: "${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}/${{ sample.id }}_val_1_bismark_bt2_PE_report.txt"
       splitting_report: "${{ config.directories.methylation_call }}/${{ sample.id }}_nsort_splitting_report.txt"
       mbias_report: "${{ config.directories.methylation_call }}/${{ sample.id }}_nsort.M-bias.txt"
-      nucleotide_report: "${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}/${{ sample.id }}_val_1_bismark_bt2_pe.nucleotide_stats.txt"
     outputs:
       report: "${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}/${{ sample.id }}.html"
     resources:
-      cores: 10
+      cores: 1
       memory: 16G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Run Bismark report
-        environment: otter-core
+        environment: otter-core-bismark-rust-3.1.0-r2
         run: |
           mkdir -p '${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}'
-          bismark2report --dir '${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}' --output '${{ sample.id }}.html' --alignment_report '${{ inputs.alignment_report }}' --splitting_report '${{ inputs.splitting_report }}' --mbias_report '${{ inputs.mbias_report }}' --nucleotide_report '${{ inputs.nucleotide_report }}'
+          bismark2report --dir '${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}' --output '${{ sample.id }}.html' --alignment_report '${{ inputs.alignment_report }}' --splitting_report '${{ inputs.splitting_report }}' --mbias_report '${{ inputs.mbias_report }}'
 
   bismark_summary:
     name: Build Bismark summary
@@ -213,12 +214,12 @@ jobs:
     outputs:
       report: "${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}/bismark_summary_report.html"
     resources:
-      cores: 10
+      cores: 1
       memory: 16G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Run Bismark summary
-        environment: otter-core
+        environment: otter-core-bismark-rust-3.1.0-r2
         run: |
           cd '${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}'
           bismark2summary *_val_1_bismark_bt2_pe.bam
@@ -230,15 +231,15 @@ jobs:
     inputs:
       sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
       methrix_coverage: "${{ jobs.create_methrix_object.outputs.coverage_report }}"
-      self_config: "${{ config.directories.selfconfig }}/config.yaml"
+      run_config: "${{ paths.config }}"
     outputs:
       report: "${{ config.directories.qc_summary }}/qc_summary.xlsx"
     resources:
       cores: 5
       memory: 8G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Run QC summary
         run: |
           mkdir -p '${{ config.directories.qc_summary }}'
-          qctb --config '${{ config.directories.selfconfig }}/config.yaml' --output '${{ outputs.report }}'
+          qctb --config '${{ inputs.run_config }}' --output '${{ outputs.report }}'

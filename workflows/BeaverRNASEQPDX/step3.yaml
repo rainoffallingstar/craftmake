@@ -7,7 +7,7 @@ on:
     modes: [RNASEQ]
 defaults:
   shell: bash
-  environment: otter-core
+  environment: otter-core-bismark-rust-3.1.0-r2
   observability:
     metrics: task
     capture_stdout: true
@@ -24,9 +24,9 @@ jobs:
     outputs:
       counts: "${{ config.directories.methylation_call }}/${{ sample.id }}_${{ config.workflow.species.graft }}.txt"
     resources:
-      cores: 5
+      cores: 1
       memory: 16G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Run HTSeq count on filtered graft BAM
         run: |
@@ -46,7 +46,7 @@ jobs:
     resources:
       cores: 20
       memory: 32G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Run or classify RNA-seq PDX splicing
         run: |

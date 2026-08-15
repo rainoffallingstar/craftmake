@@ -28,7 +28,7 @@ jobs:
     resources:
       cores: 1
       memory: 1G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Stage typed splicing artifacts and publish RNA-seq results
         run: |

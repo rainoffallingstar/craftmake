@@ -16,9 +16,9 @@ import (
 
 func (stateStore *Store) CreateRun(ctx context.Context, run Run) error {
 	_, err := stateStore.database.ExecContext(ctx, `
-		INSERT INTO runs(run_id, workflow, phase, config_path, config_digest, workflow_path, workflow_digest, backend, craftmake_version, resumed_from_run_id, status, started_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, run.ID, run.Workflow, run.Phase, run.ConfigPath, run.ConfigDigest, run.WorkflowPath, run.WorkflowDigest, run.Backend, run.CraftmakeVersion, nullableString(run.ResumedFromRunID), run.Status, formatTime(run.StartedAt))
+		INSERT INTO runs(run_id, workflow, phase, config_path, config_digest, workflow_path, workflow_digest, backend, craftmake_version, resumed_from_run_id, loader_kind, status, started_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, run.ID, run.Workflow, run.Phase, run.ConfigPath, run.ConfigDigest, run.WorkflowPath, run.WorkflowDigest, run.Backend, run.CraftmakeVersion, nullableString(run.ResumedFromRunID), run.LoaderKind, run.Status, formatTime(run.StartedAt))
 	if err != nil {
 		return fmt.Errorf("create run: %w", err)
 	}
@@ -624,6 +624,77 @@ func (stateStore *Store) SaveMetrics(ctx context.Context, attemptID string, coll
 	return nil
 }
 
+func (stateStore *Store) SaveRuntimeIncident(ctx context.Context, incident RuntimeIncident) error {
+	if incident.ID == "" || incident.RunID == "" || incident.AttemptID == "" {
+		return fmt.Errorf("runtime incident id, run id, and attempt id are required")
+	}
+	diagnosticPaths, err := json.Marshal(incident.DiagnosticPaths)
+	if err != nil {
+		return fmt.Errorf("encode runtime incident diagnostic paths: %w", err)
+	}
+	evidencePaths, err := json.Marshal(incident.EvidencePaths)
+	if err != nil {
+		return fmt.Errorf("encode runtime incident evidence paths: %w", err)
+	}
+	_, err = stateStore.database.ExecContext(ctx, `
+		INSERT OR REPLACE INTO runtime_incidents(
+			incident_id, run_id, attempt_id, schema_version, category, scope, retry_safe,
+			retry_policy, owner, escalation, remediation_status, summary, first_observed_at,
+			executor, backend, backend_job_id, exit_code, signal, diagnostic_paths_json, evidence_paths_json
+		) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, incident.ID, incident.RunID, incident.AttemptID, incident.SchemaVersion, incident.Category, incident.Scope,
+		incident.RetrySafe, incident.RetryPolicy, incident.Owner, incident.Escalation, incident.RemediationStatus,
+		incident.Summary, formatTime(incident.FirstObservedAt), nullableString(incident.Executor), nullableString(incident.Backend),
+		nullableString(incident.BackendJobID), incident.ExitCode, nullableString(incident.Signal), string(diagnosticPaths), string(evidencePaths))
+	if err != nil {
+		return fmt.Errorf("save runtime incident %q: %w", incident.ID, err)
+	}
+	return nil
+}
+
+func (stateStore *Store) ListRuntimeIncidents(ctx context.Context, runID string) ([]RuntimeIncident, error) {
+	rows, err := stateStore.database.QueryContext(ctx, `
+		SELECT incident_id, run_id, attempt_id, schema_version, category, scope, retry_safe,
+		       retry_policy, owner, escalation, remediation_status, summary, first_observed_at,
+		       COALESCE(executor, ''), COALESCE(backend, ''), COALESCE(backend_job_id, ''),
+		       exit_code, COALESCE(signal, ''), COALESCE(diagnostic_paths_json, '[]'), COALESCE(evidence_paths_json, '[]')
+		FROM runtime_incidents WHERE run_id = ? ORDER BY first_observed_at, incident_id
+	`, runID)
+	if err != nil {
+		return nil, fmt.Errorf("list runtime incidents: %w", err)
+	}
+	defer rows.Close()
+
+	incidents := []RuntimeIncident{}
+	for rows.Next() {
+		var incident RuntimeIncident
+		var firstObservedAt string
+		var retrySafe int
+		var diagnosticPaths, evidencePaths string
+		if err := rows.Scan(&incident.ID, &incident.RunID, &incident.AttemptID, &incident.SchemaVersion, &incident.Category,
+			&incident.Scope, &retrySafe, &incident.RetryPolicy, &incident.Owner, &incident.Escalation,
+			&incident.RemediationStatus, &incident.Summary, &firstObservedAt, &incident.Executor, &incident.Backend,
+			&incident.BackendJobID, &incident.ExitCode, &incident.Signal, &diagnosticPaths, &evidencePaths); err != nil {
+			return nil, fmt.Errorf("scan runtime incident: %w", err)
+		}
+		incident.RetrySafe = retrySafe != 0
+		if incident.FirstObservedAt, err = time.Parse(time.RFC3339Nano, firstObservedAt); err != nil {
+			return nil, fmt.Errorf("parse runtime incident timestamp: %w", err)
+		}
+		if err := json.Unmarshal([]byte(diagnosticPaths), &incident.DiagnosticPaths); err != nil {
+			return nil, fmt.Errorf("decode runtime incident diagnostic paths: %w", err)
+		}
+		if err := json.Unmarshal([]byte(evidencePaths), &incident.EvidencePaths); err != nil {
+			return nil, fmt.Errorf("decode runtime incident evidence paths: %w", err)
+		}
+		incidents = append(incidents, incident)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read runtime incidents: %w", err)
+	}
+	return incidents, nil
+}
+
 func (stateStore *Store) RefreshableMetrics(ctx context.Context, runID string) ([]MetricRefreshCandidate, error) {
 	rows, err := stateStore.database.QueryContext(ctx, `
 		SELECT task_attempts.attempt_id, COALESCE(task_attempts.result_path, '')
@@ -700,9 +771,9 @@ func (stateStore *Store) RunSummary(ctx context.Context, runID string) (Run, map
 	var resumedFromRunID sql.NullString
 	var startedAt string
 	err := stateStore.database.QueryRowContext(ctx, `
-		SELECT run_id, workflow, phase, config_path, config_digest, workflow_path, workflow_digest, backend, craftmake_version, resumed_from_run_id, status, started_at, finished_at
+		SELECT run_id, workflow, phase, config_path, config_digest, workflow_path, workflow_digest, backend, craftmake_version, resumed_from_run_id, loader_kind, status, started_at, finished_at
 		FROM runs WHERE run_id = ?
-	`, runID).Scan(&run.ID, &run.Workflow, &run.Phase, &run.ConfigPath, &run.ConfigDigest, &run.WorkflowPath, &run.WorkflowDigest, &run.Backend, &run.CraftmakeVersion, &resumedFromRunID, &run.Status, &startedAt, &finished)
+	`, runID).Scan(&run.ID, &run.Workflow, &run.Phase, &run.ConfigPath, &run.ConfigDigest, &run.WorkflowPath, &run.WorkflowDigest, &run.Backend, &run.CraftmakeVersion, &resumedFromRunID, &run.LoaderKind, &run.Status, &startedAt, &finished)
 	if err != nil {
 		return run, nil, fmt.Errorf("load run summary: %w", err)
 	}

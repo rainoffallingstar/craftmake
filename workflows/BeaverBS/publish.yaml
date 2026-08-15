@@ -29,7 +29,7 @@ jobs:
     resources:
       cores: 1
       memory: 1G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Stage and publish checked BeaverBS results
         run: |

@@ -55,17 +55,23 @@ func TestBeaverBSStep1RunsLocallyAndUsesCache(t *testing.T) {
 		t.Fatalf("logs command did not expose controller log path:\n%s", listedLogs)
 	}
 	firstStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", firstRunID)
-	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 6") {
+	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 12") {
 		t.Fatalf("unexpected first run status:\n%s", firstStatus)
 	}
 
 	for _, expectedOutput := range []string{
 		"workflow/fastqc_raw/sample-a_R1_fastqcx/fastqc_data.txt",
 		"workflow/fastqc_raw/sample-b_R2_fastqcx/fastqc_data.txt",
+		"workflow/fastqc_raw/sample-a_R1_fastqc.zip",
+		"workflow/fastqc_raw/sample-b_R2_fastqc.html",
 		"workflow/trim/sample-a_val_1.fq.gz",
 		"workflow/trim/sample-b_R2.fastq.gz_trimming_report.txt",
 		"workflow/fastqc_clean/sample-a_val_1_fastqcx/fastqc_data.txt",
 		"workflow/fastqc_clean/sample-b_val_2_fastqcx/fastqc_data.txt",
+		"workflow/fastqc_clean/sample-a_val_1_fastqc.zip",
+		"workflow/fastqc_clean/sample-b_val_2_fastqc.html",
+		"workflow/QC/sample-a_seqkit_stat.txt",
+		"workflow/QC/sample-b_seqkit_stat.txt",
 	} {
 		if _, err := os.Stat(filepath.Join(projectDirectory, expectedOutput)); err != nil {
 			t.Fatalf("expected BeaverBS output %q: %v", expectedOutput, err)
@@ -87,7 +93,7 @@ func TestBeaverBSStep1RunsLocallyAndUsesCache(t *testing.T) {
 	)
 	secondRunID := outputValue(t, secondRunOutput, "run_id")
 	secondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID)
-	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 6") {
+	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 12") {
 		t.Fatalf("unexpected cached run status:\n%s", secondStatus)
 	}
 	verboseSecondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID, "--verbose")
@@ -208,6 +214,39 @@ done
 mkdir -p "$output_directory"
 printf 'input=%s\n' "$input_path" > "$output_directory/fastqc_data.txt"
 `)
+	writeExecutable(t, filepath.Join(toolDirectory, "fastqc"), `#!/usr/bin/env bash
+set -euo pipefail
+output_directory=""
+input_paths=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) output_directory="$2"; shift 2 ;;
+    -t) shift 2 ;;
+    --extract) shift ;;
+    *) input_paths+=("$1"); shift ;;
+  esac
+done
+mkdir -p "$output_directory"
+for input_path in "${input_paths[@]}"; do
+  file_name="$(basename "$input_path")"
+  sample_name="${file_name%.fastq.gz}"
+  sample_name="${sample_name%.fq.gz}"
+  printf 'fastqc input=%s\n' "$input_path" > "$output_directory/${sample_name}_fastqc.zip"
+  printf 'fastqc input=%s\n' "$input_path" > "$output_directory/${sample_name}_fastqc.html"
+done
+`)
+	writeExecutable(t, filepath.Join(toolDirectory, "seqkit"), `#!/usr/bin/env bash
+set -euo pipefail
+if [ "${1:-}" != "stat" ]; then exit 2; fi
+shift
+for argument in "$@"; do
+  case "$argument" in
+    -a|-T|-b) ;;
+    -j) shift ;;
+    *) printf 'seqkit input=%s\n' "$argument" ;;
+  esac
+done
+`)
 	writeExecutable(t, filepath.Join(toolDirectory, "trim_galore"), `#!/usr/bin/env bash
 set -euo pipefail
 output_directory=""
@@ -258,6 +297,7 @@ output:
   analysis_dir: analysis
 directories:
   qc:
+    main: workflow/QC
     before: workflow/fastqc_raw
     after: workflow/fastqc_clean
   sid_log: workflow/log

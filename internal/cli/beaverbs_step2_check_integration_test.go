@@ -36,14 +36,13 @@ func TestBeaverBSStep2CheckRunsLocallyAndUsesCache(t *testing.T) {
 	)
 	firstRunID := outputValue(t, firstRunOutput, "run_id")
 	firstStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", firstRunID)
-	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 3") {
+	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 2") {
 		t.Fatalf("unexpected first BeaverBS step2-check status:\n%s", firstStatus)
 	}
 
 	for _, expectedOutput := range []string{
 		"workflow/log/step2-check/sample-a_human.ready",
 		"workflow/log/step2-check/sample-b_human.ready",
-		"workflow/QC/summary/multiqc_report.html",
 	} {
 		if _, err := os.Stat(filepath.Join(projectDirectory, expectedOutput)); err != nil {
 			t.Fatalf("expected BeaverBS step2-check output %q: %v", expectedOutput, err)
@@ -64,7 +63,7 @@ func TestBeaverBSStep2CheckRunsLocallyAndUsesCache(t *testing.T) {
 	)
 	secondRunID := outputValue(t, secondRunOutput, "run_id")
 	secondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID)
-	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 3") {
+	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 2") {
 		t.Fatalf("unexpected cached BeaverBS step2-check status:\n%s", secondStatus)
 	}
 }
@@ -81,19 +80,6 @@ if [ "${1:-}" != "run" ]; then exit 2; fi
 shift 2
 if [ "${1:-}" = "--" ]; then shift; fi
 exec "$@"
-`)
-	writeExecutable(t, filepath.Join(toolDirectory, "multiqc"), `#!/usr/bin/env bash
-set -euo pipefail
-output_directory=""
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    -o) output_directory="$2"; shift 2 ;;
-    -f) shift ;;
-    *) shift ;;
-  esac
-done
-mkdir -p "$output_directory"
-printf 'multiqc report\n' > "$output_directory/multiqc_report.html"
 `)
 }
 

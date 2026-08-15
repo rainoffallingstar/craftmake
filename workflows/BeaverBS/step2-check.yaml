@@ -7,7 +7,7 @@ on:
     modes: [RRBS, WGBS, BSSEQ]
 defaults:
   shell: bash
-  environment: otter-core
+  environment: otter-core-bismark-rust-3.1.0-r2
   observability:
     metrics: task
     capture_stdout: true
@@ -31,7 +31,7 @@ jobs:
     resources:
       cores: 1
       memory: 1G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Write validated BeaverBS step2 artifact manifest
         run: |
@@ -96,21 +96,3 @@ jobs:
           } > "$temporary_path"
           mv -f "$temporary_path" "$output_path"
           trap - EXIT
-
-  multiqc:
-    name: Aggregate step2 quality reports
-    scope: global
-    dimensions: []
-    inputs:
-      sample_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
-    outputs:
-      report: "${{ config.directories.qc_summary }}/multiqc_report.html"
-    resources:
-      cores: 4
-      memory: 8G
-      partition: cpu
-    steps:
-      - name: Run MultiQC
-        run: |
-          mkdir -p '${{ config.directories.qc_summary }}'
-          multiqc '${{ config.directories.work }}' -o '${{ config.directories.qc_summary }}' -f

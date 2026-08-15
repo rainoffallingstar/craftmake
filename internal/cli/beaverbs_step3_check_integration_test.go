@@ -48,6 +48,7 @@ func TestBeaverBSStep3CheckRunsLocallyAndUsesCache(t *testing.T) {
 		"workflow/log/step3-check/sample-a.ready",
 		"workflow/log/step3-check/sample-b.ready",
 		"workflow/mCall/methrixh5/reference_cpgs.ron",
+		"workflow/mCall/methrixh5/human.gtf",
 		"workflow/mCall/methrixh5/methrix_data.h5",
 		"workflow/mCall/methrixh5/CpG_coverage.xlsx",
 		"workflow/bsmap/human/sample-a.html",
@@ -104,8 +105,7 @@ output_directory=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --output) output_path="$2"; output_directory="$2"; shift 2 ;;
-    --annotation-dir) exit 2 ;;
-    --genome|--input|--threads) shift 2 ;;
+    --annotation-dir|--genome|--input|--threads) shift 2 ;;
     *) shift ;;
   esac
 done
@@ -115,7 +115,10 @@ if [ "$command_name" = "extract-cpgs" ] || [ "$command_name" = "extract-cp-gs" ]
 elif [ "$command_name" = "process" ]; then
   mkdir -p "$output_directory"
   printf 'methrix data\n' > "$output_directory/methrix_data.h5"
+  printf 'assays\n' > "$output_directory/assays.h5"
   printf 'coverage\n' > "$output_directory/CpG_coverage.xlsx"
+  printf 'annotation report\n' > "$output_directory/CpG_annotation_report.xlsx"
+  printf 'annotation details\n' > "$output_directory/CpG_annotation_details.tsv.gz"
 else
   exit 2
 fi
@@ -128,8 +131,8 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --dir) output_directory="$2"; shift 2 ;;
     --output) output_name="$2"; shift 2 ;;
-    --alignment_report|--splitting_report|--mbias_report|--nucleotide_report) shift 2 ;;
-    *) shift ;;
+    --alignment_report|--splitting_report|--mbias_report) shift 2 ;;
+    *) printf 'unexpected bismark2report argument: %s\n' "$1" >&2; exit 2 ;;
   esac
 done
 mkdir -p "$output_directory"
@@ -159,6 +162,7 @@ func writeBeaverBSStep3CheckProjectFixture(t *testing.T, projectDirectory string
 	inputPaths := []string{
 		"config/config.yaml",
 		"references/human.fasta",
+		"references/human.gtf",
 	}
 	for _, sampleID := range []string{"sample-a", "sample-b"} {
 		inputPaths = append(inputPaths,
@@ -176,7 +180,6 @@ func writeBeaverBSStep3CheckProjectFixture(t *testing.T, projectDirectory string
 			"workflow/QC/qualimap/"+sampleID+"_human/qualimapReport.html",
 			"workflow/bsmap/human/"+sampleID+"_val_1_bismark_bt2_pe.bam",
 			"workflow/bsmap/human/"+sampleID+"_val_1_bismark_bt2_PE_report.txt",
-			"workflow/bsmap/human/"+sampleID+"_val_1_bismark_bt2_pe.nucleotide_stats.txt",
 		)
 	}
 	for _, relativePath := range inputPaths {
@@ -224,6 +227,8 @@ reference:
     fasta: [references/human.fasta]
   indices:
     genome: [references/bismark-human]
+  rnaseq:
+    gtf: [references/human.gtf]
 `
 	if err := os.WriteFile(filepath.Join(projectDirectory, "config.yaml"), []byte(configuration), 0o644); err != nil {
 		t.Fatal(err)

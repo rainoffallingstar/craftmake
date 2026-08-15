@@ -28,8 +28,8 @@ func TestBeaverPDXStep2RunsLocallyInSpeciesBatchesAndUsesCache(t *testing.T) {
 		"--project-dir", projectDirectory,
 		"--backend", "local",
 		"--max-parallel", "10",
-		"--max-cores", "32",
-		"--max-memory", "128G",
+		"--max-cores", "80",
+		"--max-memory", "320G",
 	)
 	firstRunID := outputValue(t, firstRunOutput, "run_id")
 	firstStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", firstRunID)
@@ -62,8 +62,8 @@ func TestBeaverPDXStep2RunsLocallyInSpeciesBatchesAndUsesCache(t *testing.T) {
 		"--project-dir", projectDirectory,
 		"--backend", "local",
 		"--max-parallel", "10",
-		"--max-cores", "32",
-		"--max-memory", "128G",
+		"--max-cores", "80",
+		"--max-memory", "320G",
 	)
 	secondRunID := outputValue(t, secondRunOutput, "run_id")
 	secondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID)

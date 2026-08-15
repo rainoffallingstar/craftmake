@@ -40,7 +40,7 @@ func TestCompileBeaverRNAStep2Fixture(t *testing.T) {
 	if mappingTask.Outputs["bam"] != filepath.Join("workflow", "bsmap", "sample-a_human.bam") {
 		t.Fatalf("unexpected RNA-seq BAM output %q", mappingTask.Outputs["bam"])
 	}
-	if len(mappingTask.Steps) != 2 || !strings.Contains(mappingTask.Steps[0].Command, "STAR --runThreadN '40'") || !strings.Contains(mappingTask.Steps[1].Command, "samtools sort") {
+	if len(mappingTask.Steps) != 2 || !strings.Contains(mappingTask.Steps[0].Command, "STAR --runThreadN '40'") || !strings.Contains(mappingTask.Steps[1].Command, "mv \"$aligned_bam\"") || !strings.Contains(mappingTask.Steps[1].Command, "samtools index -@ 8") {
 		t.Fatalf("unexpected STAR mapping steps: %#v", mappingTask.Steps)
 	}
 

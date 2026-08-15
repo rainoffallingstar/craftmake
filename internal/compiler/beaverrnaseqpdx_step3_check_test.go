@@ -87,8 +87,9 @@ func TestCompileBeaverRNASEQPDXStep3CheckFixture(t *testing.T) {
 	if !strings.Contains(qcSummaryTask.Steps[0].Command, "qctb") || !strings.Contains(qcSummaryTask.Steps[0].Command, "--rnaseq") {
 		t.Fatalf("unexpected RNA-seq PDX QC command: %q", qcSummaryTask.Steps[0].Command)
 	}
-	if !strings.Contains(qcSummaryTask.Steps[0].Command, `species_configuration["name"] = graft_species`) || !strings.Contains(qcSummaryTask.Steps[0].Command, "yaml.safe_load") {
-		t.Fatalf("RNA-seq PDX QC command does not create a task-local QCTB compatibility config: %q", qcSummaryTask.Steps[0].Command)
+	if strings.Contains(qcSummaryTask.Steps[0].Command, "yaml.safe_load") ||
+		!strings.Contains(qcSummaryTask.Steps[0].Command, "qctb --config '") {
+		t.Fatalf("RNA-seq PDX QC summary must pass its immutable run configuration directly to QCTB: %q", qcSummaryTask.Steps[0].Command)
 	}
 
 	if plan.TaskByID["BeaverRNASEQPDX/step3-check/step3_checker"] != nil {

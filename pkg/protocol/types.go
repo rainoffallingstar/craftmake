@@ -65,7 +65,9 @@ type TaskResult struct {
 	StartedAt           time.Time    `json:"started_at"`
 	FinishedAt          time.Time    `json:"finished_at"`
 	ExitCode            int          `json:"exit_code"`
+	Signal              string       `json:"signal,omitempty"`
 	Error               string       `json:"error,omitempty"`
+	Incident            *Incident    `json:"incident,omitempty"`
 	Steps               []StepResult `json:"steps"`
 	MissingOutputs      []string     `json:"missing_outputs,omitempty"`
 	ObservabilityErrors []string     `json:"observability_errors,omitempty"`

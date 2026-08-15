@@ -43,7 +43,7 @@ func TestCompileBeaverRNASEQPDXStep3Fixture(t *testing.T) {
 	if countTask.Outputs["counts"] != filepath.Join("workflow", "expression", "sample-a_human.txt") {
 		t.Fatalf("unexpected RNA-seq PDX count output %q", countTask.Outputs["counts"])
 	}
-	if countTask.Resources.Cores != 5 || countTask.Resources.MemoryByte != 16<<30 {
+	if countTask.Resources.Cores != 1 || countTask.Resources.MemoryByte != 16<<30 {
 		t.Fatalf("unexpected HTSeq resources: %#v", countTask.Resources)
 	}
 	countCommand := countTask.Steps[0].Command

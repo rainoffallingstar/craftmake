@@ -66,7 +66,7 @@ func TestCompileBeaverRNASEQPDXStep2Fixture(t *testing.T) {
 		if len(mappingSubmission.TaskIDs) != 2 {
 			t.Fatalf("expected two sample workers in mapping batch %q: %#v", groupKey, mappingSubmission.TaskIDs)
 		}
-		if mappingSubmission.Resources.Cores != 80 || mappingSubmission.Resources.MemoryByte != 128<<30 {
+		if mappingSubmission.Resources.Cores != 80 || mappingSubmission.Resources.MemoryByte != 160<<30 {
 			t.Fatalf("unexpected mapping allocation for %q: %#v", groupKey, mappingSubmission.Resources)
 		}
 		if mappingSubmission.Worker == nil || mappingSubmission.Worker.Resources.Cores != 40 || mappingSubmission.Worker.Resources.MemoryByte != 64<<30 || mappingSubmission.Worker.MaxParallel != 2 {

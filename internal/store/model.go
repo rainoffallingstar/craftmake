@@ -16,6 +16,7 @@ type Run struct {
 	Backend          string
 	CraftmakeVersion string
 	ResumedFromRunID string
+	LoaderKind       string
 	Status           string
 	StartedAt        time.Time
 	FinishedAt       *time.Time
@@ -129,6 +130,29 @@ type TaskMetrics struct {
 	VoluntaryContextSwitches   *int64
 	InvoluntaryContextSwitches *int64
 	RawMetrics                 json.RawMessage
+}
+
+type RuntimeIncident struct {
+	ID                string
+	RunID             string
+	AttemptID         string
+	SchemaVersion     string
+	Category          string
+	Scope             string
+	RetrySafe         bool
+	RetryPolicy       string
+	Owner             string
+	Escalation        string
+	RemediationStatus string
+	Summary           string
+	FirstObservedAt   time.Time
+	Executor          string
+	Backend           string
+	BackendJobID      string
+	ExitCode          *int
+	Signal            string
+	DiagnosticPaths   []string
+	EvidencePaths     []string
 }
 
 type MetricRefreshCandidate struct {

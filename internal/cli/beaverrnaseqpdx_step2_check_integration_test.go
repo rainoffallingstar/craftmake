@@ -40,7 +40,7 @@ func TestBeaverRNASEQPDXStep2CheckRunsLocallyAndUsesCache(t *testing.T) {
 	)
 	firstRunID := outputValue(t, firstRunOutput, "run_id")
 	firstStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", firstRunID)
-	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 9") {
+	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 5") {
 		t.Fatalf("unexpected first BeaverRNASEQPDX step2-check status:\n%s", firstStatus)
 	}
 
@@ -55,7 +55,6 @@ func TestBeaverRNASEQPDXStep2CheckRunsLocallyAndUsesCache(t *testing.T) {
 		for _, speciesName := range []string{"human", "mouse"} {
 			expectedOutputs = append(expectedOutputs,
 				filepath.Join("workflow", "log", "step2-check", sampleID+"_"+speciesName+".ready"),
-				filepath.Join("workflow", "bsmap", sampleID+"_fixed_"+speciesName+".bam"),
 			)
 		}
 	}
@@ -93,7 +92,7 @@ func TestBeaverRNASEQPDXStep2CheckRunsLocallyAndUsesCache(t *testing.T) {
 	)
 	secondRunID := outputValue(t, secondRunOutput, "run_id")
 	secondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID)
-	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 9") {
+	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 5") {
 		t.Fatalf("unexpected cached BeaverRNASEQPDX step2-check status:\n%s", secondStatus)
 	}
 }
@@ -138,10 +137,12 @@ if [ "${1:-}" != "run" ]; then exit 2; fi
 shift
 graft_bams=()
 host_bams=()
+output_names=()
 output_directory=""
 graft_reference=""
 host_reference=""
 mm_threshold=""
+recalculate_nm_enabled="false"
 bisulfite_enabled="false"
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -153,21 +154,27 @@ while [ "$#" -gt 0 ]; do
       shift
       while [ "$#" -gt 0 ] && [[ "$1" != --* ]]; do host_bams+=("$1"); shift; done
       ;;
+    --output-names)
+      shift
+      while [ "$#" -gt 0 ] && [[ "$1" != --* ]]; do output_names+=("$1"); shift; done
+      ;;
     --output) output_directory="$2"; shift 2 ;;
     --graft-ref) graft_reference="$2"; shift 2 ;;
     --host-ref) host_reference="$2"; shift 2 ;;
     --mm-threshold) mm_threshold="$2"; shift 2 ;;
     --unmapped-penalty|--threads) shift 2 ;;
-    --recalculate-nm) shift ;;
+    --recalculate-nm) recalculate_nm_enabled="true"; shift ;;
     --bisulfite) bisulfite_enabled="true"; shift ;;
     *) shift ;;
   esac
 done
-if [ "${#graft_bams[@]}" -ne "${#host_bams[@]}" ] || [ "${#graft_bams[@]}" -eq 0 ]; then exit 3; fi
-if [ ! -f "$graft_reference" ] || [ ! -f "$host_reference" ] || [ "$mm_threshold" != "4" ] || [ "$bisulfite_enabled" != "false" ]; then exit 4; fi
+if [ "${#graft_bams[@]}" -ne "${#host_bams[@]}" ] || [ "${#graft_bams[@]}" -ne "${#output_names[@]}" ] || [ "${#graft_bams[@]}" -eq 0 ]; then exit 3; fi
+if [ ! -f "$graft_reference" ] || [ ! -f "$host_reference" ] || [ "$mm_threshold" != "4" ] || [ "$recalculate_nm_enabled" != "true" ] || [ "$bisulfite_enabled" != "false" ]; then exit 4; fi
 mkdir -p "$output_directory"
-for graft_bam in "${graft_bams[@]}"; do
-  output_name="$(basename "$graft_bam" .bam)_Filtered.bam"
+for graft_index in "${!graft_bams[@]}"; do
+  graft_bam="${graft_bams[$graft_index]}"
+  output_name="${output_names[$graft_index]}"
+  if [[ "$graft_bam" == *"_fixed_"* ]]; then exit 5; fi
   printf 'RNA filtered from %s\n' "$graft_bam" > "$output_directory/$output_name"
   printf 'RNA index for %s\n' "$output_name" > "$output_directory/$output_name.bai"
 done

@@ -33,7 +33,7 @@ func TestBeaverRNAStep1RunsLocallyAndUsesCache(t *testing.T) {
 	)
 	firstRunID := outputValue(t, firstRunOutput, "run_id")
 	firstStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", firstRunID)
-	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 6") {
+	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 12") {
 		t.Fatalf("unexpected first BeaverRNA step1 status:\n%s", firstStatus)
 	}
 
@@ -65,7 +65,7 @@ func TestBeaverRNAStep1RunsLocallyAndUsesCache(t *testing.T) {
 	)
 	secondRunID := outputValue(t, secondRunOutput, "run_id")
 	secondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID)
-	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 6") {
+	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 12") {
 		t.Fatalf("unexpected cached BeaverRNA step1 status:\n%s", secondStatus)
 	}
 }

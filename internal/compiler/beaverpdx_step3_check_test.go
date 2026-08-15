@@ -73,6 +73,18 @@ func TestCompileBeaverPDXStep3CheckFixture(t *testing.T) {
 	if referenceTask == nil || referenceTask.Inputs["genome"][0] != filepath.Join(repositoryRoot, "fixtures", "BeaverPDX", "references", "human.fasta") {
 		t.Fatalf("unexpected PDX graft reference task: %#v", referenceTask)
 	}
+	if referenceTask.Inputs["annotation"][0] != filepath.Join(repositoryRoot, "fixtures", "BeaverPDX", "references", "human.gtf") {
+		t.Fatalf("unexpected resolved PDX Methrix annotation input: %#v", referenceTask.Inputs["annotation"])
+	}
+	for _, requiredFragment := range []string{
+		"annotation_path='" + filepath.Join(repositoryRoot, "fixtures", "BeaverPDX", "references", "human.gtf") + "'",
+		"Methrix annotation must be a regular resolved GTF",
+		"$genome_key.gtf\"",
+	} {
+		if !strings.Contains(referenceTask.Steps[0].Command, requiredFragment) {
+			t.Fatalf("PDX Methrix reference preparation does not stage resolved annotation %q: %s", requiredFragment, referenceTask.Steps[0].Command)
+		}
+	}
 	if !strings.Contains(referenceTask.Steps[0].Command, "--contigs") || !strings.Contains(referenceTask.Steps[0].Command, `contig_arguments+=(--contigs "$contig")`) || !strings.Contains(referenceTask.Steps[0].Command, "methx_extract_command") {
 		t.Fatalf("PDX Methrix reference preparation lacks repeated nonstandard contig flags: %s", referenceTask.Steps[0].Command)
 	}
@@ -84,11 +96,14 @@ func TestCompileBeaverPDXStep3CheckFixture(t *testing.T) {
 	if methrixTask == nil || len(methrixTask.Inputs["sample_artifacts"]) != 2 || len(methrixTask.Dependencies) != 3 {
 		t.Fatalf("unexpected PDX Methrix aggregation: %#v", methrixTask)
 	}
-	if methrixTask.Outputs["methrix_data"] != filepath.Join("workflow", "mCall", "methrixh5", "methrix_data.h5") {
-		t.Fatalf("unexpected PDX Methrix HDF5 output %q", methrixTask.Outputs["methrix_data"])
+	if methrixTask.Outputs["methrix_data"] != filepath.Join("workflow", "mCall", "methrixh5", "methrix_data.h5") ||
+		methrixTask.Outputs["assays"] != filepath.Join("workflow", "mCall", "methrixh5", "assays.h5") ||
+		methrixTask.Outputs["annotation_report"] != filepath.Join("workflow", "mCall", "methrixh5", "CpG_annotation_report.xlsx") ||
+		methrixTask.Outputs["annotation_details"] != filepath.Join("workflow", "mCall", "methrixh5", "CpG_annotation_details.tsv.gz") {
+		t.Fatalf("PDX Methrix output set must include all executor outputs: %#v", methrixTask.Outputs)
 	}
-	if strings.Contains(methrixTask.Steps[0].Command, "--annotation-dir") {
-		t.Fatalf("PDX Methrix process command uses unsupported --annotation-dir: %s", methrixTask.Steps[0].Command)
+	if !strings.Contains(methrixTask.Steps[0].Command, "--annotation-dir 'workflow/mCall/methrixh5'") {
+		t.Fatalf("PDX Methrix process must provide the staged annotation directory: %s", methrixTask.Steps[0].Command)
 	}
 	if !strings.Contains(methrixTask.Steps[0].Command, "METHX:-methx") {
 		t.Fatalf("PDX Methrix process should support an explicit executable override: %s", methrixTask.Steps[0].Command)
@@ -107,8 +122,9 @@ func TestCompileBeaverPDXStep3CheckFixture(t *testing.T) {
 	if qcSummaryTask == nil || len(qcSummaryTask.Inputs["species_qc_artifacts"]) != 4 || len(qcSummaryTask.Dependencies) != 7 {
 		t.Fatalf("unexpected PDX QC summary aggregation: %#v", qcSummaryTask)
 	}
-	if !strings.Contains(qcSummaryTask.Steps[0].Command, `species_configuration["name"] = graft_species`) || !strings.Contains(qcSummaryTask.Steps[0].Command, "yaml.safe_load") {
-		t.Fatalf("PDX QC summary should derive a QCTB-compatible species config: %s", qcSummaryTask.Steps[0].Command)
+	if !strings.Contains(qcSummaryTask.Steps[0].Command, "qctb --config '") ||
+		strings.Contains(qcSummaryTask.Steps[0].Command, "yaml.safe_load") {
+		t.Fatalf("PDX QC summary must pass its immutable run configuration directly to QCTB: %s", qcSummaryTask.Steps[0].Command)
 	}
 	if plan.TaskByID["BeaverPDX/step3-check/step3_checker"] != nil {
 		t.Fatal("step3-check must terminate in typed PDX analysis artifacts, not a marker-only checker task")

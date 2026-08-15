@@ -18,7 +18,7 @@ func Compile(workflow *spec.WorkflowSpec, context *Context) (*Plan, error) {
 	if err := workflow.Validate(); err != nil {
 		return nil, err
 	}
-	if len(workflow.On.Otter.Modes) > 0 && !containsFold(workflow.On.Otter.Modes, context.Workflow.Mode) {
+	if context.Workflow.Mode != "STANDALONE" && len(workflow.On.Otter.Modes) > 0 && !containsFold(workflow.On.Otter.Modes, context.Workflow.Mode) {
 		return nil, fmt.Errorf("workflow %q does not support mode %q", workflow.Name, context.Workflow.Mode)
 	}
 
@@ -133,6 +133,9 @@ func Compile(workflow *spec.WorkflowSpec, context *Context) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := validatePhaseResourceEnvelope(plan, context); err != nil {
+		return nil, err
+	}
 	return plan, nil
 }
 
@@ -142,6 +145,9 @@ func compileTaskSkeleton(workflow *spec.WorkflowSpec, jobID string, job spec.Job
 		return nil, fmt.Errorf("job %q resources: %w", jobID, err)
 	}
 	resources := protocol.ResourceRequest{Cores: job.Resources.Cores, MemoryByte: memoryBytes, Partition: job.Resources.Partition, Time: job.Resources.Time}
+	if phaseEnvelope, declared := context.Execution.PhaseResources[workflow.On.Otter.Phase]; declared && resources.Time == "" {
+		resources.Time = phaseEnvelope.Time
+	}
 	if resources.Cores <= 0 {
 		resources.Cores = 1
 	}
@@ -152,6 +158,9 @@ func compileTaskSkeleton(workflow *spec.WorkflowSpec, jobID string, job spec.Job
 			return nil, fmt.Errorf("job %q worker resources: %w", jobID, err)
 		}
 		workerPlan = &WorkerPlan{Resources: protocol.ResourceRequest{Cores: job.Worker.Resources.Cores, MemoryByte: workerMemory, Partition: job.Worker.Resources.Partition, Time: job.Worker.Resources.Time}, MaxParallel: job.Worker.MaxParallel}
+		if phaseEnvelope, declared := context.Execution.PhaseResources[workflow.On.Otter.Phase]; declared && workerPlan.Resources.Time == "" {
+			workerPlan.Resources.Time = phaseEnvelope.Time
+		}
 		if workerPlan.MaxParallel <= 0 {
 			workerPlan.MaxParallel = 1
 		}

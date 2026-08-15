@@ -508,6 +508,36 @@ func TestBuildScriptIncludesConfiguredSlurmAllocation(t *testing.T) {
 	}
 }
 
+func TestBuildScriptPrefersPhaseAllocationTimeOverSlurmDefault(t *testing.T) {
+	request := backend.SubmissionRequest{
+		SubmissionID: "run:phase-time",
+		Resources: protocol.ResourceRequest{
+			Cores:      2,
+			MemoryByte: 4 << 30,
+			Time:       "02:00:00",
+		},
+	}
+	workers := []preparedWorker{{
+		manifest: &protocol.TaskManifest{
+			TaskID:           "workflow/step/job/sample=A",
+			Resources:        protocol.ResourceRequest{Cores: 2, MemoryByte: 4 << 30, Time: "02:00:00"},
+			RuntimeDirectory: "/state/task-a",
+		},
+		scriptPath: "/state/task-a/worker.sh",
+	}}
+
+	script, err := buildScriptWithOptions(request, workers, "/state/submission", scriptOptions{DefaultTime: "08:00:00"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(script, "#SBATCH --time='02:00:00'") {
+		t.Fatalf("script did not preserve the phase allocation time\\n%s", script)
+	}
+	if strings.Contains(script, "#SBATCH --time='08:00:00'") {
+		t.Fatalf("script incorrectly used the Slurm default time\\n%s", script)
+	}
+}
+
 func TestBuildScriptCreatesExclusiveWorkerSteps(t *testing.T) {
 	request := backend.SubmissionRequest{
 		SubmissionID:      "run:batch-species-human",

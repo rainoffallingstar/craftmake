@@ -45,16 +45,16 @@ func TestCompileBeaverPDXStep3Fixture(t *testing.T) {
 	if task.Outputs["coverage"] != filepath.Join("workflow", "mCall", "sample-a_nsort.bismark.cov.gz") {
 		t.Fatalf("unexpected methylation coverage output %q", task.Outputs["coverage"])
 	}
-	if task.Resources.Cores != 5 || task.Resources.MemoryByte != 34<<30 {
+	if task.Resources.Cores != 20 || task.Resources.MemoryByte != 48<<30 {
 		t.Fatalf("unexpected PDX step3 resources: %#v", task.Resources)
 	}
 	if len(task.Steps) != 3 {
 		t.Fatalf("expected sort, pair filtering and extraction steps, got %#v", task.Steps)
 	}
-	if task.Steps[0].Environment != "otter-core" || task.Steps[1].Environment != "" || task.Steps[2].Environment != "otter-core" {
+	if task.Steps[0].Environment != "otter-core-bismark-rust-3.1.0-r2" || task.Steps[1].Environment != "" || task.Steps[2].Environment != "otter-core-bismark-rust-3.1.0-r2" {
 		t.Fatalf("unexpected step environment boundaries: %#v", task.Steps)
 	}
-	if !strings.Contains(task.Steps[0].Command, "samtools sort") || !strings.Contains(task.Steps[1].Command, "pairbam") || !strings.Contains(task.Steps[2].Command, "bismark_methylation_extractor") {
+	if !strings.Contains(task.Steps[0].Command, "samtools sort") || !strings.Contains(task.Steps[1].Command, "pairbam") || !strings.Contains(task.Steps[2].Command, "bismark_methylation_extractor") || !strings.Contains(task.Steps[2].Command, "--multicore 8 --buffer_size 20G") {
 		t.Fatalf("unexpected PDX step3 commands: %#v", task.Steps)
 	}
 }

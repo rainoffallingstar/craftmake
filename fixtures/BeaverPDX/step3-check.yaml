@@ -50,3 +50,7 @@ reference:
     genome:
       - references/bismark-human
       - references/bismark-mouse
+  rnaseq:
+    gtf:
+      - references/human.gtf
+      - references/mouse.gtf

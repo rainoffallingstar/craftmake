@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/fallingstar10/craftmake/internal/adapters/otter"
+	"github.com/fallingstar10/craftmake/internal/adapters/standalone"
 	"github.com/fallingstar10/craftmake/internal/backend"
 	"github.com/fallingstar10/craftmake/internal/backend/local"
 	"github.com/fallingstar10/craftmake/internal/backend/slurm"
@@ -46,8 +49,29 @@ type commonOptions struct {
 	resolvedBackend      string
 	resolvedRunID        string
 	execution            compiler.ExecutionContext
+	configKind           standalone.ConfigKind
+	standaloneAssertion  bool
 	legacyConfig         bool
 	referenceBuildConfig bool
+}
+
+func (options commonOptions) permitsMutableOverrides() bool {
+	return options.configKind == standalone.ConfigKindLegacy || options.configKind == standalone.ConfigKindStandalone
+}
+
+func executionRunID(resolvedRunID string, phase string, permitsMutableOverrides bool) string {
+	if permitsMutableOverrides || resolvedRunID == "" || phase == "" {
+		return resolvedRunID
+	}
+	return resolvedRunID + "--" + phase
+}
+
+func defaultMutableRunID() string {
+	identifierBytes := make([]byte, 3)
+	if _, err := rand.Read(identifierBytes); err != nil {
+		return "run-" + time.Now().UTC().Format("20060102T150405.000000000Z")
+	}
+	return "run-" + time.Now().UTC().Format("20060102T150405Z") + "-" + hex.EncodeToString(identifierBytes)
 }
 
 func NewRootCommand(buildInfo BuildInfo) *cobra.Command {
@@ -153,13 +177,17 @@ func newRunCommand(buildInfo BuildInfo) *cobra.Command {
 		}
 		if backendName == "" {
 			backendName = options.resolvedBackend
-		} else if !options.legacyConfig && backendName != options.resolvedBackend {
+		} else if !options.permitsMutableOverrides() && backendName != options.resolvedBackend {
 			return configurationError(fmt.Errorf("--backend cannot override immutable run backend %q", options.resolvedBackend))
 		}
+		phaseScopedRunID := executionRunID(options.resolvedRunID, plan.Phase, options.permitsMutableOverrides())
 		if runID == "" {
-			runID = options.resolvedRunID
-		} else if !options.legacyConfig && runID != options.resolvedRunID {
-			return configurationError(fmt.Errorf("--run-id cannot override immutable run id %q", options.resolvedRunID))
+			runID = phaseScopedRunID
+			if runID == "" && options.permitsMutableOverrides() {
+				runID = defaultMutableRunID()
+			}
+		} else if !options.permitsMutableOverrides() && runID != phaseScopedRunID {
+			return configurationError(fmt.Errorf("--run-id cannot override immutable phase execution id %q", phaseScopedRunID))
 		}
 		if backendName == "slurm" {
 			slurmPartition, slurmAccount, slurmQOS, slurmDefaultTime, slurmScratchRoot, err = resolveSlurmExecutionOptions(
@@ -240,7 +268,7 @@ func newRunCommand(buildInfo BuildInfo) *cobra.Command {
 		if err != nil {
 			return configurationError(err)
 		}
-		taskScheduler, err := scheduler.New(plan, stateStore, scheduler.Options{ProjectDirectory: projectDirectory, StateDirectory: stateDirectory, ConfigPath: options.configPath, ConfigDigest: digests.Config, WorkflowPath: options.workflowPath, WorkflowDigest: digests.Workflow, Backend: selectedBackend, MaxParallel: effectiveWorkers, MaxCores: effectiveMaxCores, MaxMemoryBytes: memoryBytes, Force: force, Version: buildInfo.Version, RunID: runID})
+		taskScheduler, err := scheduler.New(plan, stateStore, scheduler.Options{ProjectDirectory: projectDirectory, StateDirectory: stateDirectory, ConfigPath: options.configPath, ConfigDigest: digests.Config, WorkflowPath: options.workflowPath, WorkflowDigest: digests.Workflow, Backend: selectedBackend, MaxParallel: effectiveWorkers, MaxCores: effectiveMaxCores, MaxMemoryBytes: memoryBytes, Force: force, Version: buildInfo.Version, RunID: runID, LoaderKind: string(options.configKind)})
 		if err != nil {
 			return backendFailureError(err)
 		}
@@ -578,7 +606,25 @@ func resolveSlurmExecutionOptions(
 	defaultTime string,
 	scratchRoot string,
 ) (string, string, string, string, string, error) {
-	if !options.legacyConfig {
+	if options.permitsMutableOverrides() {
+		resolvedSlurm := options.execution.Slurm
+		if partition == "" {
+			partition = resolvedSlurm.Partition
+		}
+		if account == "" {
+			account = resolvedSlurm.Account
+		}
+		if qos == "" {
+			qos = resolvedSlurm.QOS
+		}
+		if defaultTime == "" {
+			defaultTime = resolvedSlurm.DefaultTime
+		}
+		if scratchRoot == "" {
+			scratchRoot = resolvedSlurm.ScratchRoot
+		}
+	}
+	if !options.permitsMutableOverrides() {
 		for _, flagName := range []string{"partition", "account", "qos", "time", "scratch-root"} {
 			flag := command.Flags().Lookup(flagName)
 			if flag != nil && flag.Changed {
@@ -750,6 +796,10 @@ func newReportCommand() *cobra.Command {
 		if err := report.ExportCSV(command.Context(), stateStore, runID, outputDirectory); err != nil {
 			return stateFailureError(err)
 		}
+		controllerLogPath := controllerlog.DefaultPath(filepath.Dir(statePath), runID)
+		if _, err := report.ExportEvidenceBundle(command.Context(), stateStore, runID, outputDirectory, controllerLogPath); err != nil {
+			return stateFailureError(err)
+		}
 		payload, err := json.Marshal(protocol.ReportPayload{OutputDirectory: outputDirectory, ReportFormat: "csv", MetricsRefresh: metricsRefresh})
 		if err != nil {
 			return internalFailureError(err)
@@ -898,15 +948,12 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 			stateDir:     filepath.Dir(statePath),
 			legacyConfig: legacyConfig,
 		}
-		if !legacyConfig {
-			context, loadErr := otter.Load(run.ConfigPath)
-			if loadErr != nil {
-				return configurationError(fmt.Errorf("load immutable run snapshot for resume: %w", loadErr))
-			}
-			if context.Workflow.Backend != run.Backend {
-				return configurationError(fmt.Errorf("persisted backend %q does not match immutable run backend %q", run.Backend, context.Workflow.Backend))
-			}
-			options.execution = context.Execution
+		plan, planErr := loadPlan(&options)
+		if planErr != nil {
+			return planErr
+		}
+		if !options.permitsMutableOverrides() && options.resolvedBackend != run.Backend {
+			return configurationError(fmt.Errorf("persisted backend %q does not match immutable run backend %q", run.Backend, options.resolvedBackend))
 		}
 		effectiveWorkers, workerErr := resolveEffectiveWorkers(workers, maxParallel)
 		if workerErr != nil {
@@ -976,10 +1023,6 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 			}
 		}
 
-		plan, err := loadPlan(&options)
-		if err != nil {
-			return err
-		}
 		memoryBytes, err := compiler.ParseMemory(maxMemory)
 		if err != nil {
 			return usageError("invalid --max-memory value %q: %v", maxMemory, err)
@@ -997,6 +1040,7 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 			MaxMemoryBytes:   memoryBytes,
 			Version:          buildInfo.Version,
 			ResumedFromRunID: runID,
+			LoaderKind:       string(options.configKind),
 		})
 		if err != nil {
 			return backendFailureError(err)
@@ -1074,7 +1118,9 @@ func addPlanFlags(command *cobra.Command, options *commonOptions) {
 	command.Flags().StringVar(&options.catalogDir, "catalog", "", "Workflow catalog root; defaults to CRAFTMAKE_WORKFLOW_CATALOG or installed workflows")
 	command.Flags().StringVar(&options.projectDir, "project-dir", "", "Project working directory")
 	command.Flags().StringVar(&options.stateDir, "state-dir", "", "Craftmake state directory")
-	command.Flags().BoolVar(&options.legacyConfig, "legacy-config", false, "Load configuration through the legacy compatibility adapter")
+	command.Flags().BoolVar(&options.standaloneAssertion, "standalone", false, "Require a craftmake.standalone/v1 configuration")
+	_ = command.Flags().MarkHidden("standalone")
+	command.Flags().BoolVar(&options.legacyConfig, "legacy-config", false, "Assert legacy Otter configuration routing")
 	_ = command.Flags().MarkHidden("legacy-config")
 	command.Flags().BoolVar(&options.referenceBuildConfig, "reference-build-config", false, "Load an immutable Gate 6 reference-build configuration")
 	_ = command.MarkFlagRequired("config")
@@ -1092,21 +1138,53 @@ func loadPlan(options *commonOptions) (*compiler.Plan, error) {
 	if options.legacyConfig && options.referenceBuildConfig {
 		return nil, usageError("--legacy-config and --reference-build-config cannot be combined")
 	}
+	if options.legacyConfig {
+		if _, statErr := os.Stat(options.configPath); statErr != nil {
+			_, loadErr := otter.LoadLegacy(options.configPath)
+			return nil, configurationError(loadErr)
+		}
+	}
+	if options.standaloneAssertion && (options.legacyConfig || options.referenceBuildConfig) {
+		return nil, usageError("--standalone cannot be combined with --legacy-config or --reference-build-config")
+	}
+
+	configKind, detectErr := standalone.DetectConfigKind(options.configPath)
+	if detectErr != nil {
+		if !options.referenceBuildConfig {
+			return nil, configurationError(detectErr)
+		}
+		configKind = "reference-build"
+	}
+	if options.legacyConfig && configKind != standalone.ConfigKindLegacy {
+		return nil, configurationError(fmt.Errorf("--legacy-config requires a complete legacy Otter configuration, detected %q", configKind))
+	}
+	if options.standaloneAssertion && configKind != standalone.ConfigKindStandalone {
+		return nil, configurationError(fmt.Errorf("--standalone requires schema_version %q, detected %q", standalone.SchemaVersion, configKind))
+	}
+	if options.referenceBuildConfig && configKind != "reference-build" {
+		return nil, configurationError(fmt.Errorf("--reference-build-config is only valid for the dedicated immutable reference-build configuration"))
+	}
+
 	var context *compiler.Context
-	switch {
-	case options.legacyConfig:
+	switch configKind {
+	case standalone.ConfigKindOtterRun:
+		context, err = otter.Load(options.configPath)
+	case standalone.ConfigKindLegacy:
 		context, err = otter.LoadLegacy(options.configPath)
-	case options.referenceBuildConfig:
+	case standalone.ConfigKindStandalone:
+		context, err = standalone.Load(options.configPath)
+	case "reference-build":
 		context, err = otter.LoadReferenceBuild(options.configPath)
 	default:
-		context, err = otter.Load(options.configPath)
+		return nil, configurationError(fmt.Errorf("unsupported configuration kind %q", configKind))
 	}
 	if err != nil {
 		return nil, configurationError(err)
 	}
+	options.configKind = configKind
 	options.resolvedBackend = context.Workflow.Backend
 	options.execution = context.Execution
-	if options.legacyConfig {
+	if options.configKind == standalone.ConfigKindLegacy {
 		options.resolvedRunID = ""
 		if options.resolvedBackend == "" {
 			options.resolvedBackend = "local"
@@ -1142,7 +1220,7 @@ func loadPlan(options *commonOptions) (*compiler.Plan, error) {
 	if err != nil {
 		return nil, configurationError(err)
 	}
-	if !strings.EqualFold(workflow.On.Otter.Workflow, context.Workflow.WorkflowName) {
+	if options.configKind != standalone.ConfigKindStandalone && !strings.EqualFold(workflow.On.Otter.Workflow, context.Workflow.WorkflowName) {
 		return nil, configurationError(fmt.Errorf("workflow %q targets %s, but config resolves to %s", options.workflowPath, workflow.On.Otter.Workflow, context.Workflow.WorkflowName))
 	}
 	if options.phase != "" && workflow.On.Otter.Phase != options.phase {

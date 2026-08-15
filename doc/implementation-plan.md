@@ -1,9 +1,11 @@
 # Craftmake 独立工作流执行器实施计划
 
+> **执行状态更新（2026-08-13）：** 独立 Craftmake CLI 的核心控制面已接近首版完成；父项目的 Gate 6 已接受 RRBS、RNA-seq、BS-PDX 与 RNA-PDX 的有界 executor parity。BS-PDX 与 RNA-PDX 各完成三组平衡 paired scheduler repeats，所有 12 个 cell 均通过输入/输出 checksum 与 mapped-read parity。`craftmake.standalone/v1` 的 schema-first routing、严格 loader、resume loader-kind persistence 与 SRA archive generic DAG 已新增并通过回归；`SRR31480456` standalone Slurm decode `41423708` 与独立 verifier `41423871` 均已完成，确认最终路径 manifest、只读 gzip 输出与每端 `28,865,648` 条记录。该 decode 证据仍需最终 `otter.sra-acquisition/v1` 绑定参考角色，不能单独清除生产输入 gate。生产数据、representative 20-cell matrix、scale 与 clean-host release gate 仍未完成；WGBS 继续 deferred。可审计的当前基准资产保存在 [`doc/benchmarks/`](benchmarks/README.md)。
+
 ## 1. 文档状态
 
 - 状态：实施中
-- 最后更新：2026-07-25
+- 最后更新：2026-08-13
 - 目标项目：`/home/fallingstar10/shire/xdxtools/craftmake`
 - 主要语言：Go
 - 首要使用场景：执行和管理 `otter` 的 RRBS、WGBS、BS-seq、RNA-seq 与 PDX 工作流
@@ -11,7 +13,7 @@
 - 当前实施范围：阶段 1–7，以及独立 CLI 的打包发布工作
 - 2026-07-25 命名硬切换：workflow DSL 仅接受 `on.otter`，默认环境为 `otter-core`，工具入口为 `fastqcx`、`xenofilx`、`pairbam`、`seq2mat`、`matsrun`、`methx`，Fastqcx 输出目录后缀为 `_fastqcx`，Methx 可执行覆盖变量为 `METHX`；不提供旧键、旧命令、旧任务标识、旧输出目录后缀或旧环境变量兼容别名
 - 历史证据边界：2026-07-25 前冻结的日志、checksum 与绝对路径可能记录旧命名，它们只用于证明当时的验收结果，不是当前默认；FastQC 外部协议及 `fastqc_data.txt` 文件名、`methrix_data.h5` 等科学数据名继续保留
-- Deferred：阶段 8 `otter` 子进程集成、阶段 9 Snakemake 双执行器 parity
+- Deferred：阶段 8 `otter` 子进程集成；Craftmake 二进制内的 Snakemake interpreter 仍不实施。父项目中的 explicit Snakemake compatibility executor 已独立完成有界 parity，详见本文开头的 2026-08-13 状态更新。
 - 当前里程碑：M4 最小真实 Slurm 纵向验收、BeaverBS synthetic 五阶段、活动 Slurm 作业断连后 `resume`、Controller 结构化日志、显式 worker 动态补位、pending timeout、submit-limit 退避和 Paracloud Gate 0 工具基线均已通过；BeaverPDX Gate 1 synthetic human/mouse 五阶段真实工具链、五阶段全缓存 replay、选择性失效和运行中 Controller 中断/`resume` 均已通过。当前统一策略是四类 workflow 均只先做公开真实数据的确定性小样本验收：BeaverBS 与 BeaverPDX 复用既有结果并补齐来源记录，随后完成 BeaverRNA 和 BeaverRNASEQPDX；生产规模和统一多组学验收全部后移，不作为当前 workflow gate
 - 整体估算：执行器核心约 97%；首版发布范围约 96%
 
@@ -27,7 +29,7 @@
 | 阶段 6：迁移 BeaverRNA 与 BeaverRNASEQPDX | 大部分完成 | 90% | BeaverRNA 三个 phase 与 BeaverRNASEQPDX 五个 phase 均已完成 YAML、编译测试和 Local 假工具纵向验收；下一步只做已登记公开数据的真实工具与 Slurm 小样本验收 |
 | 阶段 7：Slurm Controller、Batch srun 与 Sacct | 接近完成 | 98% | Paracloud `amd_512` 已验证真实并发 slot、终态动态补位、pending reason/timeout/scancel、受控 submit-limit 退避后真实重投、sbatch/srun/sacct、断连后 `resume` 和 accounting 延迟补采；仍缺更高负载控制面验收与两个 RNA workflow 的小样本真实集群验收 |
 | 阶段 8：Otter 集成 | Deferred | 0% | 首版不实施 |
-| 阶段 9：Snakemake Parity | Deferred | 0% | 首版不实施 |
+| 阶段 9：Snakemake Compatibility | 父项目 Gate 6 已有有界通过；Craftmake 内嵌解释器 Deferred | — | 显式 compatibility executor 的 RRBS、RNA-seq、BS-PDX 与 RNA-PDX parity 已接受；Craftmake 首版不实现 Snakemake interpreter，representative/scale 与退场决策仍未完成 |
 | 阶段 10：独立 CLI 打包与发布 | 接近完成 | 95% | Makefile 安装/卸载、Linux amd64/arm64 静态发布包、checksums、解包后 catalog 路由 smoke、CI、release workflow 和首版 README 已完成；正式发布前仍需外部干净 Linux 与真实 Slurm 安装验收 |
 
 ### 1.2 已完成的关键能力

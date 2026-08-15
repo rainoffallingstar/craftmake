@@ -49,10 +49,10 @@ func TestCompileBeaverPDXStep2Fixture(t *testing.T) {
 		if len(mappingSubmission.TaskIDs) != 2 {
 			t.Fatalf("mapping batch %q should contain two sample workers: %#v", groupKey, mappingSubmission.TaskIDs)
 		}
-		if mappingSubmission.Resources.Cores != 16 || mappingSubmission.Resources.MemoryByte != 64<<30 {
+		if mappingSubmission.Resources.Cores != 80 || mappingSubmission.Resources.MemoryByte != 320<<30 {
 			t.Fatalf("unexpected mapping allocation for %q: %#v", groupKey, mappingSubmission.Resources)
 		}
-		if mappingSubmission.Worker == nil || mappingSubmission.Worker.Resources.Cores != 8 || mappingSubmission.Worker.Resources.MemoryByte != 32<<30 || mappingSubmission.Worker.MaxParallel != 2 {
+		if mappingSubmission.Worker == nil || mappingSubmission.Worker.Resources.Cores != 40 || mappingSubmission.Worker.Resources.MemoryByte != 160<<30 || mappingSubmission.Worker.MaxParallel != 2 {
 			t.Fatalf("unexpected worker plan for %q: %#v", groupKey, mappingSubmission.Worker)
 		}
 	}
@@ -68,7 +68,7 @@ func TestCompileBeaverPDXStep2Fixture(t *testing.T) {
 	if mappingTask.Outputs["bam"] != filepath.Join("workflow", "bsmap", "sample-a_mouse.bam") {
 		t.Fatalf("unexpected mouse BAM output %q", mappingTask.Outputs["bam"])
 	}
-	if len(mappingTask.Steps) != 2 || !strings.Contains(mappingTask.Steps[0].Command, "--parallel '8'") {
+	if len(mappingTask.Steps) != 2 || !strings.Contains(mappingTask.Steps[0].Command, "--parallel 8") {
 		t.Fatalf("mapping command should use worker cores: %#v", mappingTask.Steps)
 	}
 

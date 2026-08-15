@@ -46,8 +46,12 @@ func TestBeaverPDXStep3CheckRunsLocallyAndUsesCache(t *testing.T) {
 
 	expectedOutputs := []string{
 		"workflow/mCall/methrixh5/reference_cpgs.ron",
+		"workflow/mCall/methrixh5/human.gtf",
+		"workflow/mCall/methrixh5/assays.h5",
 		"workflow/mCall/methrixh5/methrix_data.h5",
 		"workflow/mCall/methrixh5/CpG_coverage.xlsx",
+		"workflow/mCall/methrixh5/CpG_annotation_report.xlsx",
+		"workflow/mCall/methrixh5/CpG_annotation_details.tsv.gz",
 		"workflow/bsmap/human/bismark_summary_report.html",
 		"workflow/QC/summary/qc_summary.xlsx",
 	}
@@ -165,7 +169,9 @@ func writeBeaverPDXStep3CheckProjectFixture(t *testing.T, projectDirectory strin
 	t.Helper()
 	inputPaths := []string{
 		"references/human.fasta",
+		"references/human.gtf",
 		"references/mouse.fasta",
+		"references/mouse.gtf",
 		"references/bismark-human",
 		"references/bismark-mouse",
 	}
@@ -184,7 +190,6 @@ func writeBeaverPDXStep3CheckProjectFixture(t *testing.T, projectDirectory strin
 			filepath.Join("workflow", "fastqc_clean", sampleID+"_val_2_fastqcx", "fastqc_data.txt"),
 			filepath.Join("workflow", "bsmap", "human", sampleID+"_val_1_bismark_bt2_pe.bam"),
 			filepath.Join("workflow", "bsmap", "human", sampleID+"_val_1_bismark_bt2_PE_report.txt"),
-			filepath.Join("workflow", "bsmap", "human", sampleID+"_val_1_bismark_bt2_pe.nucleotide_stats.txt"),
 		)
 		for _, speciesName := range []string{"human", "mouse"} {
 			inputPaths = append(inputPaths,
@@ -241,6 +246,8 @@ reference:
     fasta: [references/human.fasta, references/mouse.fasta]
   indices:
     genome: [references/bismark-human, references/bismark-mouse]
+  rnaseq:
+    gtf: [references/human.gtf, references/mouse.gtf]
 `
 	for _, configPath := range []string{
 		filepath.Join(projectDirectory, "config.yaml"),

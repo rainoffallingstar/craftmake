@@ -2,7 +2,7 @@ package migrations
 
 import _ "embed"
 
-const CurrentVersion = 5
+const CurrentVersion = 7
 
 type Migration struct {
 	Version int
@@ -25,6 +25,12 @@ var resumeLineage string
 //go:embed 005_cache_decisions.sql
 var cacheDecisions string
 
+//go:embed 006_runtime_incidents.sql
+var runtimeIncidents string
+
+//go:embed 007_loader_kind.sql
+var loaderKind string
+
 func All() []Migration {
 	return []Migration{
 		{Version: 1, Name: "initial schema", SQL: InitialSchema},
@@ -32,5 +38,7 @@ func All() []Migration {
 		{Version: 3, Name: "artifact cache indexes", SQL: artifactCacheIndexes},
 		{Version: 4, Name: "resume lineage", SQL: resumeLineage},
 		{Version: 5, Name: "cache decisions", SQL: cacheDecisions},
+		{Version: 6, Name: "runtime incidents", SQL: runtimeIncidents},
+		{Version: 7, Name: "configuration loader kind", SQL: loaderKind},
 	}
 }

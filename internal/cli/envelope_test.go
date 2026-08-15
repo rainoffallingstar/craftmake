@@ -26,7 +26,7 @@ func TestValidateCommandDefaultsToTextAndSupportsJSONEnvelope(t *testing.T) {
 	if err := textCommand.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if output := textOutput.String(); output != "valid: BeaverBS step1 (3 tasks, 3 submissions)\n" {
+	if output := textOutput.String(); output != "valid: BeaverBS step1 (6 tasks, 6 submissions)\n" {
 		t.Fatalf("unexpected default text output %q", output)
 	}
 
@@ -123,6 +123,7 @@ references:
   resolved:
     - role: primary
       id: hg38
+      organism: Homo sapiens
       release: GRCh38
       registry_root: %[1]s/references
       manifest_digest: sha256:1111111111111111111111111111111111111111111111111111111111111111

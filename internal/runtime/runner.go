@@ -33,6 +33,7 @@ func Run(ctx context.Context, manifest *protocol.TaskManifest) (*protocol.TaskRe
 	result := &protocol.TaskResult{ProtocolVersion: protocol.Version, RunID: manifest.RunID, TaskID: manifest.TaskID, Attempt: manifest.Attempt, Status: "running", StartedAt: startedAt}
 	if err := prepareDirectories(manifest); err != nil {
 		result.Status, result.Error, result.FinishedAt, result.ExitCode = "failed", err.Error(), time.Now().UTC(), 1
+		result.Incident = protocol.ClassifyTaskIncident(*result, "")
 		_ = writeResultAtomic(manifest.ResultPath, result)
 		return result, err
 	}
@@ -63,6 +64,9 @@ func Run(ctx context.Context, manifest *protocol.TaskManifest) (*protocol.TaskRe
 		compressSuccessfulStepLogs(result)
 	}
 	result.FinishedAt = time.Now().UTC()
+	if result.Status != "succeeded" {
+		result.Incident = protocol.ClassifyTaskIncident(*result, "")
+	}
 	if err := writeResultAtomic(manifest.ResultPath, result); err != nil {
 		return result, err
 	}
@@ -134,12 +138,86 @@ func buildEnvironmentCommand(environment, shell, scriptPath string) (*exec.Cmd, 
 		return exec.Command(shell, scriptPath), nil
 	}
 	if _, err := exec.LookPath("enva"); err == nil {
+		environmentPrefix, prefixErr := configuredEnvironmentPrefix(environment)
+		if prefixErr != nil {
+			return nil, prefixErr
+		}
+		if environmentPrefix != "" {
+			runArguments, runArgumentsErr := buildExplicitPrefixRunArguments(environmentPrefix, shell, scriptPath)
+			if runArgumentsErr != nil {
+				return nil, runArgumentsErr
+			}
+			return exec.Command("enva", runArguments...), nil
+		}
 		return exec.Command("enva", "--quiet", "run", environment, "--", shell, scriptPath), nil
 	}
 	if _, err := exec.LookPath("conda"); err == nil {
 		return exec.Command("conda", "run", "--no-capture-output", "-n", environment, shell, scriptPath), nil
 	}
 	return nil, fmt.Errorf("step requires environment %q, but neither enva nor conda is available", environment)
+}
+
+func configuredEnvironmentPrefix(environment string) (string, error) {
+	const prefixVariable = "CRAFTMAKE_ENV_PREFIX"
+
+	prefix := strings.TrimSpace(os.Getenv(prefixVariable))
+	if prefix == "" {
+		return "", nil
+	}
+	if !filepath.IsAbs(prefix) {
+		return "", fmt.Errorf("%s must be an absolute environment prefix, got %q", prefixVariable, prefix)
+	}
+	cleanPrefix := filepath.Clean(prefix)
+	if filepath.Base(cleanPrefix) != environment {
+		return "", fmt.Errorf(
+			"%s prefix %q does not match workflow environment %q",
+			prefixVariable,
+			cleanPrefix,
+			environment,
+		)
+	}
+	fileInfo, err := os.Stat(cleanPrefix)
+	if err != nil {
+		return "", fmt.Errorf("inspect %s prefix %q: %w", prefixVariable, cleanPrefix, err)
+	}
+	if !fileInfo.IsDir() {
+		return "", fmt.Errorf("%s prefix %q is not a directory", prefixVariable, cleanPrefix)
+	}
+	return cleanPrefix, nil
+}
+
+func buildExplicitPrefixRunArguments(environmentPrefix, shell, scriptPath string) ([]string, error) {
+	const releaseRootVariable = "OTTER_GATE6_RELEASE_ROOT"
+
+	environmentPath := filepath.Join(environmentPrefix, "bin")
+	pathEntries := []string{environmentPath}
+	additionalEnvironment := []string{"CRAFTMAKE_ENV_PREFIX=" + environmentPrefix}
+
+	releaseRoot := strings.TrimSpace(os.Getenv(releaseRootVariable))
+	if releaseRoot != "" {
+		if !filepath.IsAbs(releaseRoot) {
+			return nil, fmt.Errorf("%s must be an absolute release root, got %q", releaseRootVariable, releaseRoot)
+		}
+		releaseBinPath := filepath.Join(filepath.Clean(releaseRoot), "bin")
+		releaseBinInfo, err := os.Stat(releaseBinPath)
+		if err != nil {
+			return nil, fmt.Errorf("inspect %s bin directory %q: %w", releaseRootVariable, releaseBinPath, err)
+		}
+		if !releaseBinInfo.IsDir() {
+			return nil, fmt.Errorf("%s bin path %q is not a directory", releaseRootVariable, releaseBinPath)
+		}
+		pathEntries = append(pathEntries, releaseBinPath)
+		additionalEnvironment = append(additionalEnvironment, releaseRootVariable+"="+filepath.Clean(releaseRoot))
+	}
+	pathEntries = append(pathEntries, os.Getenv("PATH"))
+	additionalEnvironment = append(additionalEnvironment, "PATH="+strings.Join(pathEntries, string(os.PathListSeparator)))
+
+	runArguments := []string{"--quiet", "run", "--prefix", environmentPrefix}
+	for _, environmentEntry := range additionalEnvironment {
+		runArguments = append(runArguments, "-E", environmentEntry)
+	}
+	runArguments = append(runArguments, "--", shell, scriptPath)
+	return runArguments, nil
 }
 
 func buildStepEnvironment(inheritedEnvironment []string, managedEnvironment string, runtimeVariables, stepVariables map[string]string) []string {

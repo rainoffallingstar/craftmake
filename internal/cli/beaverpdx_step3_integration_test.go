@@ -28,7 +28,7 @@ func TestBeaverPDXStep3RunsLocallyAndUsesCache(t *testing.T) {
 		"--project-dir", projectDirectory,
 		"--backend", "local",
 		"--max-parallel", "2",
-		"--max-cores", "10",
+		"--max-cores", "20",
 		"--max-memory", "68G",
 	)
 	firstRunID := outputValue(t, firstRunOutput, "run_id")
@@ -55,7 +55,7 @@ func TestBeaverPDXStep3RunsLocallyAndUsesCache(t *testing.T) {
 		"--project-dir", projectDirectory,
 		"--backend", "local",
 		"--max-parallel", "2",
-		"--max-cores", "10",
+		"--max-cores", "20",
 		"--max-memory", "68G",
 	)
 	secondRunID := outputValue(t, secondRunOutput, "run_id")

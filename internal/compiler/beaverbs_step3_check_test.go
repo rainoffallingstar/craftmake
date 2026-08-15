@@ -59,6 +59,18 @@ func TestCompileBeaverBSStep3CheckFixture(t *testing.T) {
 	if prepareReferenceTask.Inputs["genome"][0] != expectedReference {
 		t.Fatalf("unexpected canonical graft reference: %#v", prepareReferenceTask.Inputs["genome"])
 	}
+	if prepareReferenceTask.Inputs["annotation"][0] != filepath.Join(repositoryRoot, "testdata", "configs", "references", "human.gtf") {
+		t.Fatalf("unexpected resolved Methrix annotation input: %#v", prepareReferenceTask.Inputs["annotation"])
+	}
+	for _, requiredFragment := range []string{
+		"annotation_path='" + filepath.Join(repositoryRoot, "testdata", "configs", "references", "human.gtf") + "'",
+		"Methrix annotation must be a regular resolved GTF",
+		"$genome_key.gtf\"",
+	} {
+		if !strings.Contains(prepareReferenceTask.Steps[0].Command, requiredFragment) {
+			t.Fatalf("Methrix reference preparation does not stage resolved annotation %q: %s", requiredFragment, prepareReferenceTask.Steps[0].Command)
+		}
+	}
 	if !strings.Contains(prepareReferenceTask.Steps[0].Command, "--contigs") || !strings.Contains(prepareReferenceTask.Steps[0].Command, `contig_arguments+=(--contigs "$contig")`) || !strings.Contains(prepareReferenceTask.Steps[0].Command, "methx_extract_command") {
 		t.Fatalf("Methrix reference preparation lacks repeated nonstandard contig flags: %s", prepareReferenceTask.Steps[0].Command)
 	}
@@ -73,8 +85,8 @@ func TestCompileBeaverBSStep3CheckFixture(t *testing.T) {
 	if methrixTask.Outputs["methrix_data"] != filepath.Join("workflow", "mCall", "methrixh5", "methrix_data.h5") {
 		t.Fatalf("unexpected Methrix HDF5 output %q", methrixTask.Outputs["methrix_data"])
 	}
-	if strings.Contains(methrixTask.Steps[0].Command, "--annotation-dir") {
-		t.Fatalf("Methrix process command uses unsupported --annotation-dir: %s", methrixTask.Steps[0].Command)
+	if !strings.Contains(methrixTask.Steps[0].Command, "--annotation-dir 'workflow/mCall/methrixh5'") {
+		t.Fatalf("Methrix process must provide the staged annotation directory: %s", methrixTask.Steps[0].Command)
 	}
 	if !strings.Contains(methrixTask.Steps[0].Command, "METHX:-methx") {
 		t.Fatalf("Methrix process should support an explicit executable override: %s", methrixTask.Steps[0].Command)

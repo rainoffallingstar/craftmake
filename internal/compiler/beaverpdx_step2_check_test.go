@@ -24,8 +24,8 @@ func TestCompileBeaverPDXStep2CheckFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Tasks) != 10 || len(plan.Submissions) != 10 {
-		t.Fatalf("expected ten tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
+	if len(plan.Tasks) != 5 || len(plan.Submissions) != 5 {
+		t.Fatalf("expected four sample-validation tasks, Xenofilx, and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
 	}
 
 	artifactTaskID := "BeaverPDX/step2-check/sample_artifacts/sample=sample-a/species=mouse"
@@ -46,32 +46,16 @@ func TestCompileBeaverPDXStep2CheckFixture(t *testing.T) {
 		}
 	}
 
-	patchTaskID := "BeaverPDX/step2-check/patch_bam/sample=sample-a/species=mouse"
-	patchTask := plan.TaskByID[patchTaskID]
-	if patchTask == nil || !containsTaskID(patchTask.Dependencies, artifactTaskID) {
-		t.Fatalf("mouse patch task should depend on matching artifact validation: %#v", patchTask)
-	}
-	if patchTask.Inputs["reference"][0] != filepath.Join(repositoryRoot, "fixtures", "BeaverPDX", "references", "mouse.fasta") {
-		t.Fatalf("unexpected mouse patch reference: %#v", patchTask.Inputs["reference"])
-	}
-	if patchTask.Outputs["fixed_bam"] != filepath.Join("workflow", "bsmap", "sample-a_fixed_mouse.bam") {
-		t.Fatalf("unexpected fixed BAM output %q", patchTask.Outputs["fixed_bam"])
-	}
-	if !strings.Contains(patchTask.Steps[0].Command, "IS_BISULFITE_SEQUENCE=true") {
-		t.Fatalf("PDX methylation patch should enable bisulfite mode: %q", patchTask.Steps[0].Command)
-	}
-	if !strings.Contains(patchTask.Steps[0].Command, `export JAVA_HOME="${CONDA_PREFIX}/lib/jvm"`) {
-		t.Fatalf("PDX patch task should bind Picard to the active environment Java runtime: %q", patchTask.Steps[0].Command)
-	}
-
 	xenofilxTask := plan.TaskByID["BeaverPDX/step2-check/xenofilx"]
-	if xenofilxTask == nil || len(xenofilxTask.Inputs["patched_bams"]) != 4 || len(xenofilxTask.Dependencies) != 4 {
+	if xenofilxTask == nil || len(xenofilxTask.Inputs["validated_artifacts"]) != 4 || len(xenofilxTask.Dependencies) != 4 {
 		t.Fatalf("unexpected Xenofilx aggregation: %#v", xenofilxTask)
 	}
-	if !strings.Contains(xenofilxTask.Steps[0].Command, "for graft_bam") || !strings.Contains(xenofilxTask.Steps[0].Command, `xenofilx_command+=(--graft "$graft_bam")`) || !strings.Contains(xenofilxTask.Steps[0].Command, "--graft-ref '") || !strings.Contains(xenofilxTask.Steps[0].Command, "--host-ref '") || !strings.Contains(xenofilxTask.Steps[0].Command, "--bisulfite") || !strings.Contains(xenofilxTask.Steps[0].Command, "xenofilx_exit_code") || !strings.Contains(xenofilxTask.Steps[0].Command, "temporary_filtered_directory") {
+	if !strings.Contains(xenofilxTask.Steps[0].Command, "for graft_bam") || !strings.Contains(xenofilxTask.Steps[0].Command, `xenofilx_command+=(--graft "$graft_bam" --output-names`) || !strings.Contains(xenofilxTask.Steps[0].Command, "--graft-ref '") || !strings.Contains(xenofilxTask.Steps[0].Command, "--host-ref '") || !strings.Contains(xenofilxTask.Steps[0].Command, "--bisulfite") || !strings.Contains(xenofilxTask.Steps[0].Command, "--recalculate-nm") || !strings.Contains(xenofilxTask.Steps[0].Command, "temporary_filtered_directory") {
 		t.Fatalf("unexpected Xenofilx command: %q", xenofilxTask.Steps[0].Command)
 	}
-
+	if !strings.Contains(xenofilxTask.Steps[0].Command, "--threads '4'") || !strings.Contains(xenofilxTask.Steps[0].Command, "temporary_filtered_bai") {
+		t.Fatalf("PDX Xenofilx must require and preserve Xenofilx-provided BAI: %q", xenofilxTask.Steps[0].Command)
+	}
 	if xenofilxTask.Outputs["validation_manifest"] != filepath.Join("workflow", "bsmap", "Filtered_bams", "filtered-bam-validation.json") {
 		t.Fatalf("unexpected filtered BAM validation manifest: %#v", xenofilxTask.Outputs)
 	}
@@ -90,11 +74,10 @@ func TestCompileBeaverPDXStep2CheckFixture(t *testing.T) {
 		t.Fatal("filtered BAM validation must be represented by Xenofilx's content-bearing aggregate manifest")
 	}
 
-	multiQCTask := plan.TaskByID["BeaverPDX/step2-check/multiqc"]
-	if multiQCTask == nil || len(multiQCTask.Inputs["sample_artifacts"]) != 4 || len(multiQCTask.Dependencies) != 4 {
-		t.Fatalf("unexpected PDX MultiQC aggregation: %#v", multiQCTask)
+	if plan.TaskByID["BeaverPDX/step2-check/multiqc"] != nil {
+		t.Fatal("BeaverPDX step2-check must not schedule MultiQC")
 	}
 	if plan.TaskByID["BeaverPDX/step2-check/step2_checker"] != nil {
-		t.Fatal("step2-check must terminate in content-bearing validation manifests and MultiQC, not a marker-only checker")
+		t.Fatal("step2-check must terminate in content-bearing validation manifests, not a marker-only checker")
 	}
 }

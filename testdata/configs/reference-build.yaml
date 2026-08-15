@@ -19,9 +19,9 @@ reference_build:
   gtf_checksum_value: c5125258a0a2c5250ddb4c192abbf4e8
   contigs: 19
   star_sjdb_overhang: 149
-  index_build_threads: 1
+  index_build_threads: 16
   otter_binary: /gate6/bin/otter
-  samtools_binary: /gate6/envs/otter-core/bin/samtools
-  bismark_binary: /gate6/envs/otter-core/bin/bismark_genome_preparation
-  bowtie2_binary: /gate6/envs/otter-core/bin/bowtie2-build
-  star_binary: /gate6/envs/otter-core/bin/STAR
+  samtools_binary: /gate6/envs/otter-core-bismark-rust-3.1.0-r2/bin/samtools
+  bismark_binary: /gate6/envs/otter-core-bismark-rust-3.1.0-r2/bin/bismark_genome_preparation
+  bowtie2_binary: /gate6/envs/otter-core-bismark-rust-3.1.0-r2/bin/bowtie2-build
+  star_binary: /gate6/envs/otter-core-bismark-rust-3.1.0-r2/bin/STAR

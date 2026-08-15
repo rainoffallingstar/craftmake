@@ -158,6 +158,9 @@ func TestRunPreservesFailureLogs(t *testing.T) {
 	if result.Status != "failed" {
 		t.Fatalf("unexpected result status %q", result.Status)
 	}
+	if result.Incident == nil || result.Incident.Category != protocol.IncidentToolInvocation {
+		t.Fatalf("expected classified tool incident, got %#v", result.Incident)
+	}
 	step := result.Steps[0]
 	if strings.HasSuffix(step.StdoutPath, ".gz") || strings.HasSuffix(step.StderrPath, ".gz") {
 		t.Fatalf("failure logs must remain uncompressed: stdout=%q stderr=%q", step.StdoutPath, step.StderrPath)
@@ -167,6 +170,72 @@ func TestRunPreservesFailureLogs(t *testing.T) {
 	}
 	if read := readPlainLog(t, step.StderrPath); read != "failure stderr\n" {
 		t.Fatalf("unexpected failure stderr %q", read)
+	}
+}
+
+func TestBuildEnvironmentCommandUsesMatchingConfiguredPrefix(t *testing.T) {
+	toolDirectory := t.TempDir()
+	envaPath := filepath.Join(toolDirectory, "enva")
+	if err := os.WriteFile(envaPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	environmentPrefix := filepath.Join(t.TempDir(), "otter-core")
+	if err := os.Mkdir(environmentPrefix, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	releaseRoot := filepath.Join(t.TempDir(), "release")
+	if err := os.MkdirAll(filepath.Join(releaseRoot, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	inheritedPath := toolDirectory + string(os.PathListSeparator) + os.Getenv("PATH")
+	t.Setenv("PATH", inheritedPath)
+	t.Setenv("CRAFTMAKE_ENV_PREFIX", environmentPrefix)
+	t.Setenv("OTTER_GATE6_RELEASE_ROOT", releaseRoot)
+
+	command, err := buildEnvironmentCommand("otter-core", "bash", "/runtime/step.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedPath := strings.Join([]string{
+		filepath.Join(environmentPrefix, "bin"),
+		filepath.Join(releaseRoot, "bin"),
+		inheritedPath,
+	}, string(os.PathListSeparator))
+	expectedArguments := []string{
+		"enva", "--quiet", "run", "--prefix", environmentPrefix,
+		"-E", "CRAFTMAKE_ENV_PREFIX=" + environmentPrefix,
+		"-E", "OTTER_GATE6_RELEASE_ROOT=" + releaseRoot,
+		"-E", "PATH=" + expectedPath,
+		"--", "bash", "/runtime/step.sh",
+	}
+	if strings.Join(command.Args, "\x00") != strings.Join(expectedArguments, "\x00") {
+		t.Fatalf("unexpected Enva prefix command: got %#v, want %#v", command.Args, expectedArguments)
+	}
+}
+
+func TestConfiguredEnvironmentPrefixRejectsInvalidPrefix(t *testing.T) {
+	environmentPrefix := filepath.Join(t.TempDir(), "otter-core")
+	if err := os.Mkdir(environmentPrefix, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, testCase := range []struct {
+		name        string
+		prefix      string
+		environment string
+		want        string
+	}{
+		{name: "relative path", prefix: "otter-core", environment: "otter-core", want: "must be an absolute"},
+		{name: "mismatched basename", prefix: environmentPrefix, environment: "otter-extra", want: "does not match workflow environment"},
+		{name: "missing directory", prefix: filepath.Join(t.TempDir(), "otter-core"), environment: "otter-core", want: "inspect CRAFTMAKE_ENV_PREFIX prefix"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Setenv("CRAFTMAKE_ENV_PREFIX", testCase.prefix)
+			_, err := configuredEnvironmentPrefix(testCase.environment)
+			if err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("expected error containing %q, got %v", testCase.want, err)
+			}
+		})
 	}
 }
 

@@ -12,7 +12,7 @@ BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 GO_LDFLAGS ?= -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(BUILD_DATE)
 RELEASE_PLATFORMS ?= linux/amd64 linux/arm64
 
-.PHONY: all build install uninstall release release-archive test vet check clean
+.PHONY: all build install uninstall release release-archive benchmark-pdx-scheduler test vet check clean
 
 all: build
 
@@ -47,6 +47,12 @@ release-archive:
 	chmod -R a+rX "$(DIST_DIR)/craftmake_$(VERSION)_$(RELEASE_GOOS)_$(RELEASE_GOARCH)"
 	tar -C "$(DIST_DIR)" -czf "$(DIST_DIR)/craftmake_$(VERSION)_$(RELEASE_GOOS)_$(RELEASE_GOARCH).tar.gz" "craftmake_$(VERSION)_$(RELEASE_GOOS)_$(RELEASE_GOARCH)"
 	rm -rf "$(DIST_DIR)/craftmake_$(VERSION)_$(RELEASE_GOOS)_$(RELEASE_GOARCH)"
+
+benchmark-pdx-scheduler:
+	python3 scripts/generate_pdx_scheduler_benchmark.py \
+		--source doc/benchmarks/gate6-r41-pdx-scheduling-repeat-aggregate-r2.source.json \
+		--summary-csv doc/benchmarks/pdx-step2-check-controller-reconciliation-summary.csv \
+		--figure-svg doc/benchmarks/pdx-step2-check-controller-reconciliation.svg
 
 test:
 	$(GO) test ./... -count=1

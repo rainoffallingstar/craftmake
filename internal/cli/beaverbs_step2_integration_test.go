@@ -1,11 +1,20 @@
 package cli_test
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+)
+
+var (
+	craftmakeBinaryBuildOnce   sync.Once
+	sharedCraftmakeBinaryPath  string
+	sharedCraftmakeBinaryError error
+	sharedCraftmakeBuildOutput []byte
 )
 
 func TestBeaverBSStep2RunsLocallyAndUsesCache(t *testing.T) {
@@ -29,8 +38,8 @@ func TestBeaverBSStep2RunsLocallyAndUsesCache(t *testing.T) {
 		"--project-dir", projectDirectory,
 		"--backend", "local",
 		"--max-parallel", "4",
-		"--max-cores", "16",
-		"--max-memory", "64G",
+		"--max-cores", "40",
+		"--max-memory", "160G",
 	)
 	firstRunID := outputValue(t, firstRunOutput, "run_id")
 	firstStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", firstRunID)
@@ -60,8 +69,8 @@ func TestBeaverBSStep2RunsLocallyAndUsesCache(t *testing.T) {
 		"--project-dir", projectDirectory,
 		"--backend", "local",
 		"--max-parallel", "4",
-		"--max-cores", "16",
-		"--max-memory", "64G",
+		"--max-cores", "40",
+		"--max-memory", "160G",
 	)
 	secondRunID := outputValue(t, secondRunOutput, "run_id")
 	secondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID)
@@ -72,11 +81,36 @@ func TestBeaverBSStep2RunsLocallyAndUsesCache(t *testing.T) {
 
 func buildCraftmakeBinary(t *testing.T, repositoryRoot, binaryPath string) {
 	t.Helper()
-	buildCommand := exec.Command("go", "build", "-o", binaryPath, "./cmd/craftmake")
-	buildCommand.Dir = repositoryRoot
-	buildOutput, err := buildCommand.CombinedOutput()
+	craftmakeBinaryBuildOnce.Do(func() {
+		buildDirectory, err := os.MkdirTemp("", "craftmake-cli-test-build-")
+		if err != nil {
+			sharedCraftmakeBinaryError = err
+			return
+		}
+		sharedCraftmakeBinaryPath = filepath.Join(buildDirectory, "craftmake")
+		buildCommand := exec.Command("go", "build", "-o", sharedCraftmakeBinaryPath, "./cmd/craftmake")
+		buildCommand.Dir = repositoryRoot
+		sharedCraftmakeBuildOutput, sharedCraftmakeBinaryError = buildCommand.CombinedOutput()
+	})
+	if sharedCraftmakeBinaryError != nil {
+		t.Fatalf("build shared Craftmake binary: %v\n%s", sharedCraftmakeBinaryError, sharedCraftmakeBuildOutput)
+	}
+
+	sourceBinary, err := os.Open(sharedCraftmakeBinaryPath)
 	if err != nil {
-		t.Fatalf("build craftmake: %v\n%s", err, buildOutput)
+		t.Fatalf("open shared Craftmake binary: %v", err)
+	}
+	defer sourceBinary.Close()
+	destinationBinary, err := os.OpenFile(binaryPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		t.Fatalf("create test Craftmake binary: %v", err)
+	}
+	if _, err := io.Copy(destinationBinary, sourceBinary); err != nil {
+		_ = destinationBinary.Close()
+		t.Fatalf("copy shared Craftmake binary: %v", err)
+	}
+	if err := destinationBinary.Close(); err != nil {
+		t.Fatalf("finalize test Craftmake binary: %v", err)
 	}
 }
 
@@ -174,19 +208,6 @@ mkdir -p "$(dirname "$metrics")"
 printf 'gc metrics\n' > "$metrics"
 printf 'gc chart\n' > "$chart"
 printf 'gc summary\n' > "$summary"
-`)
-	writeExecutable(t, filepath.Join(toolDirectory, "multiqc"), `#!/usr/bin/env bash
-set -euo pipefail
-output_directory=""
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    -o) output_directory="$2"; shift 2 ;;
-    -f) shift ;;
-    *) shift ;;
-  esac
-done
-mkdir -p "$output_directory"
-printf 'multiqc report\n' > "$output_directory/multiqc_report.html"
 `)
 }
 

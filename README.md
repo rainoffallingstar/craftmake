@@ -1,409 +1,221 @@
 # craftmake
 
-`craftmake` is a standalone native workflow runner for `otter` pipelines. It compiles versioned workflow YAML into a task DAG, executes tasks locally or through Slurm, records run state in SQLite, and provides task-level caching, recovery, logs, and reports.
+`craftmake` is the native workflow executor for [`otter`](https://github.com/). It compiles versioned workflow YAML into task DAGs, runs tasks locally or through Slurm, persists state in SQLite, and exposes caching, recovery, cancellation, logs, and reports.
 
-The first release targets these workflow families:
+> **Project status:** first-release control-plane implementation is substantially complete. Gate 6 production validation is still in progress; this repository must not be described as production-throughput approved.
 
-- BeaverBS
-- BeaverPDX
-- BeaverRNA
-- BeaverRNASEQPDX
+## At a glance
 
-`craftmake` does not create `otter` projects, scan FASTQ files, generate domain configuration, interpret Snakemake files, or replace the existing `otter` command. It reads an existing `otter` configuration and executes one workflow phase at a time.
+| Capability | Status |
+| :--- | :--- |
+| Native Local and Slurm execution | Implemented and tested |
+| SQLite state, task caching, resume, cancellation | Implemented and tested |
+| Immutable run/reference boundary | Accepted in Gate 6 runtime evidence |
+| Craftmake/Snakemake executor parity | Accepted for RRBS, RNA-seq, BS-PDX, and RNA-PDX bounded runs |
+| Repeated PDX scheduler comparison | Three paired repeats per scenario; descriptive evidence |
+| Representative matrix and production-scale throughput | Not started; blocked on approved production inputs |
+| WGBS | Deferred |
 
-## Current Naming Contract
+## Scope
 
-The bundled workflow DSL and tool catalog use a hard-cut naming contract: `on.otter`, `otter-core`, `fastqcx`, `xenofilx`, `pairbam`, `seq2mat`, `matsrun`, and `methx` with the `METHX` executable override. Fastqcx output directories use the `_fastqcx` suffix. No compatibility aliases are provided for the prior product key, environment, commands, task identifiers, environment variable, or output-directory suffix. The external FastQC protocol remains unchanged, including `fastqc_data.txt`, as do scientific data names such as `methrix_data.h5`.
+### Supported
 
-Evidence captured before the 2026-07-25 cutover may contain the former names in archived logs, checksums, or absolute paths. Those labels are historical evidence only; they are not current defaults or accepted aliases.
+- Workflow families: BeaverBS, BeaverPDX, BeaverRNA, and BeaverRNASEQPDX.
+- Backends: Local execution with admission budgets and native Slurm execution.
+- State: SQLite run/task/submission records, Controller JSONL, cache decisions, retries, and resume.
+- Evidence: task metrics, Slurm accounting, artifact manifests, exact/structural/scientific comparisons, and immutable checksums.
 
-## Current Validation Status
+### Not supported by the first release
 
-The core runner is approximately 97% complete and the first-release scope is approximately 96% complete. Core CLI, protocol, Local execution, caching, recovery, cancellation, Slurm submission slots, pending timeout, submit retry, accounting refresh, release archives, and workflow catalog routing are implemented and covered by the repository test suite.
+- Creating `otter` projects, scanning FASTQ files, or generating domain configuration.
+- An embedded Snakemake interpreter. Snakemake remains an explicit compatibility executor outside the Craftmake binary.
+- Kubernetes, cloud batch, generic container backends, or cross-phase global DAG execution.
+- Full production-scale biology, throughput, or statistical-power claims from small samples.
 
-Workflow acceptance currently stands at:
+## Current progress
 
-| Workflow family | YAML, compiler, and Local fixtures | Real tools and Slurm | Remaining acceptance |
-|---|---|---|---|
-| BeaverBS | Complete for all five phases | Complete for a synthetic cross-phase hg38-window project; step1 also has a small real-FASTQ run | Public human RRBS small-sample replay from `SRP547218`; no full-size run in the current gate |
-| BeaverPDX | Complete for all five phases | Complete for a synthetic dual-species five-phase chain with real tools and Slurm, including selective invalidation and interrupted-Controller recovery | Public prostate PDX WGBS small-sample replay from `GSE227086`; no 30× full-run download in the current gate |
-| BeaverRNA | Complete for all three phases | Not yet accepted end to end | Two-run mouse RNA-seq small sample from `SRP175361`: STAR, Qualimap, HTSeq, matrix, QCTB, cache, and recovery; statistical splicing is not run for one group |
-| BeaverRNASEQPDX | Complete for all five phases | Not yet accepted end to end | Two-run PDAC PDX RNA-seq small sample from `GSE278757`, subject to SRA access preflight: dual-species STAR/Xenofilx, HTSeq, matrix, QCTB, cache, and recovery |
+The current implementation is strongest in the execution control plane: CLI and protocol handling, workflow compilation, Local and Slurm scheduling, SQLite state, task caching, recovery, cancellation, accounting refresh, release archives, catalog routing, and structured evidence are implemented and covered by repository tests.
 
-Current workflow validation is intentionally limited to deterministic small samples derived from public real sequencing runs. The registered sources are `SRP547218` for BeaverBS, `GSE227086 / PRJNA943199` for BeaverPDX, `SRP175361 / PRJNA513077` for BeaverRNA, and `GSE278757 / PRJNA1168601` for BeaverRNASEQPDX. The default contract is two runs per workflow and the first 1,000,000 paired reads per run, with accession, metadata, counts, and checksums retained. These runs validate tool and file contracts, orchestration, caching, and recovery; they do not establish production throughput, biological coverage, differential results, or statistical power. Production-scale and unified multi-omics acceptance are deferred until all four small-sample toolchains are complete.
+### Gate 6 evidence status
 
-The BeaverBS synthetic acceptance used real FastQC, Trim Galore, Bismark, samtools, Qualimap, Picard, MultiQC, `pairbam`, Methrix 0.1.0, Bismark report/summary, and QCTB on Paracloud Slurm. It validates orchestration and real tool contracts, but it is not a substitute for public real-data or production-scale acceptance.
+| Area | Evidence completed | Current status |
+| :--- | :--- | :--- |
+| Runtime and references | Immutable releases, role-explicit references, checksum sealing, and Paracloud compute-node preflight. | **Accepted** |
+| RRBS executor parity | Craftmake and explicit Snakemake runs passed artifact parity, recovery exercises, publication retry, failed-task retry, and semantic review. | **Accepted** |
+| RNA-seq executor parity | Paired runs completed through publication; RNA manifests passed verification and comparison. | **Accepted** |
+| BS-PDX executor parity | Byte-identical filtered BAM/BAI; `97,182` mapped graft reads. | **Accepted** |
+| RNA-PDX executor parity | Byte-identical filtered BAM/BAI; `118,596` mapped graft reads. | **Accepted** |
+| PDX scheduler benchmark | Three balanced Craftmake/Snakemake pairs per scenario for `step2-check`. | **Accepted, bounded** |
+| Representative matrix | 20-cell matrix with repeated runs. | **Open** |
+| Scale benchmark | Production throughput and scheduler-pressure test. | **Open** |
+| WGBS | Production workflow path and canary. | **Deferred** |
 
-The Paracloud production-tool baseline is accepted on both the login node and fresh `amd_512` allocations. The recorded baseline includes Bismark 0.25.1, STAR 2.7.11b, samtools 1.15.1, Qualimap 2.3, Picard 3.4.0, HTSeq 2.0.3, MultiQC 1.19, Trim Galore 0.6.10, `pairbam` and Xenofilx `daily-20260717`, QCTB 0.1.0, `fastqcx` 0.3.4, and the Methrix 0.1.0-format `methx` implementation. Real Picard and `methx` minimum-input jobs completed with `COMPLETED/0`.
+All accepted workflow evidence is either synthetic or bounded public-data canary evidence. It establishes orchestration, file contracts, executor parity, and selected recovery behavior. It does not establish full biological coverage or production throughput.
 
-The BeaverPDX synthetic dual-species chain now passes all five phases with real tools on Paracloud Slurm. Its human/mouse fixture produced non-empty Xenofilx graft BAMs, methylation outputs, a 5,239-CpG Methrix reference, valid HDF5/XLSX/HTML reports, and a QCTB summary for both samples. Final phase cache counts are `7`, `12`, `13`, `2`, and `13`, with zero new Slurm submissions; all recorded jobs settled at `COMPLETED/0` and left an empty queue. Gate 1 also passed isolated selective invalidation: after a 13-task cached baseline, changing only the QCTB XLSX metadata produced `cached: 11, succeeded: 2` and submitted only QCTB plus its checker. An independently isolated Controller-interruption run recovered the already-submitted QCTB job without resubmission, then created a continuation with `cached: 12, succeeded: 1` for only the pending checker; a final replay was `cached: 13`. This is synthetic orchestration evidence, not production-scale biological acceptance.
+### Workflow readiness
 
-The detailed status, evidence, and next validation gates are maintained in [`doc/implementation-plan.md`](doc/implementation-plan.md).
+| Workflow | Workflow assets and local contracts | Real Slurm / parity position |
+| :--- | :--- | :--- |
+| **BeaverBS** | Complete | Synthetic chain and RRBS executor-parity/recovery evidence accepted |
+| **BeaverPDX** | Complete | Synthetic chain, direct Xenofilx replay, and paired executor parity accepted |
+| **BeaverRNA** | Complete | Paired executor run through publication accepted |
+| **BeaverRNASEQPDX** | Complete | Direct Xenofilx replay and paired executor parity accepted |
 
-## Known Production Constraints
+The implementation status and historical evidence remain in [doc/implementation-plan.md](doc/implementation-plan.md). The parent repository's benchmark policy is in [`../docs/benchmark-plan.md`](../docs/benchmark-plan.md).
 
-- `craftmake` coordinates declared CPU and memory budgets but does not enforce cgroup or OS hard limits on child processes.
-- Production Slurm acceptance must check both the `craftmake` terminal state and `sacct`; a job can briefly remain `COMPLETING` after its task result and accounting record are terminal.
-- BeaverBS and BeaverPDX `methx` steps accept `METHX=/absolute/path/to/methx`, defaulting to `methx`. On Paracloud, the global `~/.cargo/bin/methx` remains unusable because `libhdf5_serial.so.103` is absent; the accepted baseline sets `METHX=$HOME/methx/target/release/methx`. That binary was verified in a fresh allocation with `LD_LIBRARY_PATH` unset and resolves HDF5 through its recorded `rust_build` RUNPATH. A clean-host release still needs a portable `methx` package or managed environment.
-- Managed workflow steps discard inherited host Java variables. The bundled Picard steps then bind `JAVA_HOME` to `${CONDA_PREFIX}/lib/jvm` when that runtime exists; this avoids mixing a base Java installation with the active environment libraries. Custom workflows invoking Picard should preserve the same rule.
-- QCTB is treated as an external managed tool and is not modified by this repository. For PDX workflows, the QC task writes a temporary compatibility copy of the project YAML in which `workflow.species.name` is the graft-species string expected by QCTB; the original Craftmake configuration remains unchanged.
-- `methx` preserves the scientific output contract `methrix_data.h5` and `CpG_coverage.xlsx`, does not accept `process --annotation-dir`, and filters nonstandard FASTA contigs by default. The bundled BeaverBS and BeaverPDX workflows implement those contracts and retry CpG extraction with FASTA header-derived `--contigs` when the default reference is empty.
-- The current workflow gate uses only deterministic public real-data small samples. Full-run production throughput, unified multi-omics, and biological/statistical acceptance are explicitly deferred; small-sample success must not be reported as any of those outcomes.
-- A first release still requires clean-Linux installation, old-database migration, and medium-load Slurm control-plane acceptance. Production-sized workflow acceptance remains a later, separately scoped gate.
+### Standalone configurations
 
-## Requirements
+`craftmake.standalone/v1` runs a generic DAG without an Otter sample/reference identity contract. The configuration must declare a workflow name, phase, backend, and absolute project directory; it may declare samples and Slurm defaults. The configuration loader is selected deterministically:
 
-For all commands:
+- `otter.run/v1` uses the immutable Otter run loader.
+- A complete legacy Otter shape uses the legacy compatibility loader.
+- `craftmake.standalone/v1` uses the strict standalone loader.
+- Ambiguous configurations fail closed and must declare a schema version.
 
-- Go 1.26 or a prebuilt `craftmake` binary
-- A workflow YAML file and an `otter` configuration YAML file
-- Input files, reference files, and output directories referenced by the configuration
+Standalone workflow identity is intentionally independent from `workflow.name`, while phase matching remains mandatory. Use the hidden `--standalone` flag only to assert that a supplied config is standalone. The generic SRA archive decoder is `workflows/SRAArchiveDecode/decode.yaml`; it validates archive size, MD5, SHA-256, and transfer manifest on the compute node, runs `fasterq-dump --split-files`, compresses deterministically with `pigz -n`, audits paired FASTQ records, and atomically creates a read-only output root.
 
-For Local execution:
+## Craftmake and Snakemake
 
-- POSIX shell utilities used by the workflow steps
-- The workflow's configured tools, such as `fastqcx`, `trim_galore`, `samtools`, or `STAR`
-- GNU `time` is optional; without it, the run continues with reduced resource metrics
-- `enva` or conda is optional and only required by workflows that select those environments
+Both executors consume the same immutable `run.yaml` when parity is measured. Inputs, references, workflow assets, resource envelopes, and artifact contracts are held fixed; task decomposition and state implementation may differ.
 
-For Slurm execution:
+| Concern | Craftmake | Snakemake compatibility executor |
+| :--- | :--- | :--- |
+| Execution model | Versioned Craftmake YAML compiled to a native task DAG | Compatibility projection generated from `run.yaml` |
+| Runtime state | SQLite task state plus Controller JSONL | Compatibility runtime state plus Otter-retained controller/accounting evidence |
+| Failure model | Classified `otter.runtime-incident/v1` records and retry policy | Compatibility-controller outcome, Slurm accounting, and artifact evidence |
+| Metrics | Per-task metrics, allocations, events, and reports | Controller and Slurm accounting evidence collected for paired comparisons |
+| Artifact publication | Create-only, dimension-aware manifest publication and verification | Same post-success publication and verification contract |
+| Default role | Default executor | Explicit compatibility path; no automatic fallback |
 
-- `sbatch`, `srun`, `squeue`, `sacct`, and `scancel` on `PATH`
-- A usable Slurm account and partition
-- The workflow's configured tools available on compute nodes
-- Slurm accounting configured well enough for delayed metric collection
+## Current scheduler benchmark
 
-Check the selected execution environment before running a workflow:
+The current benchmark measures **controller reconciliation time** for the PDX `step2-check` phase: the interval from the final worker completion to the controller's terminal completion. It does not include queue delay.
 
-```bash
-craftmake doctor --backend local
-craftmake doctor --backend slurm
-```
+**Fixed conditions:** release `gate6-20260812T104500Z-pdx-host-fasta-r41`, Paracloud Slurm, matched prerequisites, matched reference roles, matched resource envelope, and three paired repeats per scenario. All 12 cells passed input-content parity, filtered BAM/BAI checksum parity, and mapped-read parity.
 
-## Build And Install
+![Nature-style PDX controller reconciliation comparison](doc/benchmarks/pdx-step2-check-controller-reconciliation.svg)
 
-Build from source:
+| Scenario | Craftmake median (min–max), s | Snakemake median (min–max), s | Median paired difference, s |
+| :--- | ---: | ---: | ---: |
+| BS-PDX | 4.213 (2.385–5.057) | 19.819 (14.008–164.668) | 15.606 |
+| RNA-PDX | 2.651 (1.552–4.308) | 9.478 (8.458–29.556) | 5.807 |
+
+The bars show medians, whiskers show observed min–max ranges, and connected points show matched repeats. Exact two-sided Wilcoxon signed-rank `p = 0.250` for both scenarios. With `n = 3`, this is descriptive evidence, not a significance claim.
+
+Within this release, phase, compatibility projection, and cluster environment, Craftmake showed lower and narrower observed reconciliation delays. The result is not a general executor-speed ranking: Craftmake used three worker jobs per cell, while the Snakemake compatibility projection used one. Queue delay, worker makespan, and reconciliation are reported as separate metrics.
+
+Full source data, derived statistics, the reproducible generator, and checksums are in [doc/benchmarks/README.md](doc/benchmarks/README.md).
+
+## Next plan
+
+Work proceeds in immutable releases and fresh project/run roots. Historical releases and evidence are not modified.
+
+### 1. Requalify production source inputs
+
+The five currently registered production candidates are marked `missing_reacquire_for_production`:
+
+- RRBS: `SRR31480456`
+- WGBS: `SRR6373947`
+- RNA-seq: `SRR8397559`
+- BS-PDX: `SRR23802966`
+- RNA-PDX: `SRR30880970`
+
+For each reacquisition, record accession metadata, archive checksum, decoded FASTQ checksums, paired-read counts, tool version/command, and reference-role bindings in the create-only `otter.sra-acquisition/v1` manifest. Do not reuse synthetic inputs as public-data evidence. WGBS remains deferred even after reacquisition.
+
+### 2. Complete approved real-data canaries
+
+Run the registered deterministic small samples for the four active non-WGBS workflows. Each workflow must have a fresh immutable Craftmake run and an explicit Snakemake compatibility run, with artifact verification, semantic review, accounting settlement, empty final queue, and at least one relevant recovery or invalidation check.
+
+### 3. Expand repeated scheduler evidence
+
+The existing PDX result is sufficient for a bounded descriptive comparison only. The next benchmark stage should:
+
+1. preserve the same metric split: controller, queue, worker, and reconciliation;
+2. repeat accepted scenarios with enough pairs to characterize variance;
+3. add topology-identical microbenchmarks when attributing executor overhead;
+4. report medians, ranges or confidence intervals, effect sizes, and classified incidents;
+5. keep output parity and resource envelopes as acceptance gates rather than post-hoc annotations.
+
+### 4. Run the representative matrix
+
+After canary and repeated-run acceptance, execute the planned 20-cell matrix with at least three runs per approved comparison cell. Publish immutable aggregate JSON/TSV evidence, input/output parity checks, resource metrics, queue behavior, retries, recovery outcomes, and incident classification.
+
+### 5. Run scale and release gates
+
+Only after the representative matrix is accepted:
+
+- measure production throughput and scheduler pressure;
+- validate 50–200 ready submissions, slot limits, pending timeout, submit retries, cancellation races, accounting delays, and resume without duplicate submissions;
+- verify clean-Linux installation, release archives, static binaries, catalog routing, old-database migration, and a post-install Slurm smoke;
+- decide whether Craftmake can become the stable default while retaining an explicit Snakemake rollback path.
+
+### Immediate next action
+
+The next operational action is **production-source reacquisition and provenance publication**, followed by fresh real-data canaries. Do not start the 20-cell representative matrix or production-scale throughput tests until source provenance, canary parity, and recovery evidence are accepted.
+
+## Quick start
+
+### Build and install
 
 ```bash
 make build
 ./build/craftmake --version
+sudo make install PREFIX="/usr/local"
 ```
 
-Install the binary and the bundled workflow catalog:
+### Doctor and plan
 
 ```bash
-sudo make install
-```
+craftmake doctor --backend local
+craftmake doctor --backend slurm
 
-The default installation locations are:
-
-- Binary: `/usr/local/bin/craftmake`
-- Workflow catalog: `/usr/local/share/craftmake/workflows`
-
-Use a different prefix without modifying the source tree:
-
-```bash
-make install PREFIX="$HOME/.local"
-```
-
-The executable searches for workflows in the installed catalog, `./workflows`, and the directory specified by `CRAFTMAKE_WORKFLOW_CATALOG`. Use `--catalog` when an explicit catalog root is required.
-
-## Select A Workflow
-
-A workflow can be selected explicitly:
-
-```bash
-craftmake validate \
-  --workflow workflows/BeaverBS/step1.yaml \
-  --config /path/to/config.yaml
-```
-
-Or it can be routed automatically from the `otter` configuration and phase:
-
-```bash
-craftmake validate \
-  --config /path/to/config.yaml \
+craftmake plan \
+  --config /path/to/project_run.yaml \
   --phase step1 \
-  --catalog /path/to/workflows
+  --catalog workflows/
 ```
 
-The same workflow and configuration flags are accepted by `plan`, `run`, and `validate`:
-
-- `--workflow` or `-w`: explicit workflow YAML
-- `--config` or `-c`: `otter` configuration YAML
-- `--phase`: phase used for catalog routing
-- `--catalog`: workflow catalog root
-- `--project-dir`: project root used to resolve relative paths
-- `--state-dir`: directory containing the SQLite state database
-
-## Validate And Plan
-
-Validate configuration, workflow syntax, references, resources, inputs, and the compiled task count:
-
-```bash
-craftmake validate \
-  --workflow workflows/BeaverBS/step1.yaml \
-  --config /path/to/config.yaml
-```
-
-Inspect the compiled DAG before execution:
-
-```bash
-craftmake plan \
-  --workflow workflows/BeaverBS/step1.yaml \
-  --config /path/to/config.yaml
-```
-
-Machine-readable plans are available with `--format json`:
-
-```bash
-craftmake plan \
-  --workflow workflows/BeaverBS/step1.yaml \
-  --config /path/to/config.yaml \
-  --format json > plan.json
-```
-
-Use `--dry-run` with `run` to compile and print the plan without creating a run:
+### Run locally
 
 ```bash
 craftmake run \
-  --workflow workflows/BeaverBS/step1.yaml \
-  --config /path/to/config.yaml \
-  --dry-run
-```
-
-## Run Locally
-
-A Local run uses `workflow/.craftmake/state.sqlite` below the project directory by default:
-
-```bash
-craftmake run \
-  --workflow workflows/BeaverBS/step1.yaml \
-  --config /path/to/config.yaml \
+  --config /path/to/project_run.yaml \
+  --phase step1 \
   --backend local \
   --workers 4 \
   --max-cores 16 \
   --max-memory 64G
 ```
 
-`--workers` is the maximum number of active physical submissions. Local submissions additionally share the `--max-cores` and `--max-memory` admission budgets. A submission that is larger than either explicit budget fails immediately with a `submission.unschedulable` Controller event instead of remaining pending indefinitely. These budgets coordinate craftmake tasks; they are not OS or cgroup hard limits on child processes.
-
-The command prints the run identifier, SQLite state path, and Controller JSONL path:
-
-```text
-run_id: ...
-state: .../workflow/.craftmake/state.sqlite
-controller_log: .../workflow/.craftmake/runs/.../controller.jsonl
-```
-
-Use `--project-dir` and `--state-dir` when the configuration directory and state directory should be separated:
+### Run on Slurm
 
 ```bash
 craftmake run \
-  --workflow /path/to/workflow.yaml \
-  --config /path/to/config.yaml \
-  --project-dir /path/to/project \
-  --state-dir /path/to/project/workflow/.craftmake
+  --config /path/to/project_run.yaml \
+  --phase step1 \
+  --backend slurm
 ```
 
-Successful task fingerprints are reused automatically. Use `--force` to bypass the cache for a run:
+### Inspect and cancel
 
 ```bash
-craftmake run \
-  --workflow /path/to/workflow.yaml \
-  --config /path/to/config.yaml \
-  --force
+craftmake report --state-dir .craftmake/
+craftmake cancel --state-dir .craftmake/
 ```
 
-## Run On Slurm
+## Operational limits
 
-First verify the controller host has the required Slurm commands:
+- CPU and memory admission budgets coordinate Craftmake scheduling but do not impose OS cgroup limits on child processes.
+- Slurm jobs can remain briefly in `COMPLETING` after task results are terminal; inspect both Craftmake state and `sacct`.
+- On Paracloud, the accepted `methx` path is supplied through `METHX`; a portable clean-host Methrix/HDF5 package remains a release task.
+- Managed Picard steps bind `${CONDA_PREFIX}/lib/jvm` when available to avoid inheriting an incompatible base Java runtime.
+
+## Reproducible benchmark assets
+
+Regenerate the tracked benchmark CSV and SVG with:
 
 ```bash
-craftmake doctor --backend slurm
+make benchmark-pdx-scheduler
 ```
 
-Then select the Slurm backend and, when needed, a partition:
-
-```bash
-craftmake run \
-  --workflow /path/to/workflow.yaml \
-  --config /path/to/config.yaml \
-  --backend slurm \
-  --partition amd_512 \
-  --workers 8
-```
-
-`--workers` limits the number of Slurm allocations that craftmake has submitted or is waiting on. A successful `sbatch` that remains `PENDING` still owns one slot; when it reaches a terminal state, the slot is released and the next ready submission is filled automatically. Each allocation can independently run multiple `srun` workers according to the compiled batch worker plan.
-
-Use the optional submission controls when a cluster enforces per-user limits or has a long queue:
-
-```bash
-craftmake run \
-  --workflow /path/to/workflow.yaml \
-  --config /path/to/config.yaml \
-  --backend slurm \
-  --workers 8 \
-  --slurm-submit-attempts 20 \
-  --slurm-submit-backoff 30s \
-  --slurm-submit-max-backoff 5m \
-  --slurm-pending-timeout 2h
-```
-
-A transient `sbatch` rejection caused by submit limits or temporary controller unavailability is retried with exponential backoff and does not consume an active allocation slot. Permanent errors such as an invalid partition, account, QoS, or impossible resource request fail immediately. `submission.submit_retry_scheduled`, `submission.pending`, `submission.pending_timeout`, and `submission.unschedulable` events record these distinctions.
-
-A Slurm run should be considered accepted only after checking both the `craftmake` run state and Slurm accounting:
-
-```bash
-craftmake status --state /path/to/state.sqlite --run latest --verbose
-craftmake report --state /path/to/state.sqlite --run latest
-sacct -X -j <job-id> --format=JobID,State,ExitCode,Elapsed
-```
-
-## Resume And Recovery
-
-`resume` first reconciles a still-running source run, then creates a new run that reuses recoverable state and fingerprints:
-
-```bash
-craftmake resume \
-  --state /path/to/project/workflow/.craftmake/state.sqlite \
-  --run <source-run-id> \
-  --partition amd_512
-```
-
-For a running source run, recovery checks terminal task results, running backend submissions, task manifests, and backend-specific state before the new run starts. Recovery does not silently treat a missing or incompatible result as success.
-
-The recovery summary and Controller log path are printed to standard output. Recovery and resumed execution can be inspected independently through their `run_id` values.
-
-## Inspect State, Logs, And Reports
-
-Show the latest run:
-
-```bash
-craftmake status \
-  --state /path/to/project/workflow/.craftmake/state.sqlite
-```
-
-Show every task's cache decision and reason:
-
-```bash
-craftmake status \
-  --state /path/to/project/workflow/.craftmake/state.sqlite \
-  --run latest \
-  --verbose
-```
-
-List the Controller JSONL file and task attempt directories:
-
-```bash
-craftmake logs \
-  --state /path/to/project/workflow/.craftmake/state.sqlite \
-  --run latest
-```
-
-Export task metrics and artifact information as CSV:
-
-```bash
-craftmake report \
-  --state /path/to/project/workflow/.craftmake/state.sqlite \
-  --run latest
-```
-
-Retry delayed or unavailable Slurm accounting metrics before exporting:
-
-```bash
-craftmake report \
-  --state /path/to/project/workflow/.craftmake/state.sqlite \
-  --run latest \
-  --refresh-metrics
-```
-
-The Controller log is JSON Lines. It contains control-plane events such as run lifecycle, cache decisions, submissions, attempts, retries, cancellation, and recovery. Task stdout and stderr remain in their task attempt directories and are not copied into the Controller log.
-
-## Cancel A Run
-
-Cancel the latest running run:
-
-```bash
-craftmake cancel \
-  --state /path/to/project/workflow/.craftmake/state.sqlite \
-  --run latest
-```
-
-Cancellation persists the run and task state, requests cancellation from active backend submissions, and records cancellation events. Backend cancellation may take time to settle; inspect both `craftmake status` and Slurm accounting afterward.
-
-## State Layout
-
-With the default state directory, a project contains:
-
-```text
-workflow/.craftmake/
-  state.sqlite
-  runs/<run-id>/
-    controller.jsonl
-    tasks/<task-id>/attempt-001/
-      manifest.json
-      result.json
-      stdout.log
-      stderr.log
-      ...
-```
-
-The SQLite database is the source of truth for run, task, submission, attempt, artifact, and metric state. The Controller JSONL file is the append-only diagnostic stream for one run.
-
-## Exit Codes
-
-The CLI uses stable exit-code categories so automation can distinguish invalid input, state failures, backend failures, task failures, and cancellation. The command's stderr contains the human-readable error; successful commands return zero.
-
-Do not parse normal status text as the primary automation contract. For automation, use `validate`, `plan --format json`, the SQLite database, CSV reports, and the printed `run_id`/`state`/`controller_log` paths.
-
-## Release Archives
-
-Build Linux amd64 and arm64 archives with checksums:
-
-```bash
-make release VERSION=0.1.0 COMMIT="unknown"
-cd dist
-sha256sum -c checksums.txt
-```
-
-Each archive contains:
-
-```text
-bin/craftmake
-share/craftmake/workflows/
-```
-
-The release workflow publishes archives when a `v*` tag is pushed. Before publishing, run the release gate and verify an archive in a clean directory:
-
-```bash
-make check
-make release VERSION=0.1.0
-mkdir -p /tmp/craftmake-release-check
-tar -xzf dist/craftmake_0.1.0_linux_amd64.tar.gz -C /tmp/craftmake-release-check
-/tmp/craftmake-release-check/craftmake_0.1.0_linux_amd64/bin/craftmake doctor --backend local
-```
-
-## Development Checks
-
-Run the repository checks locally:
-
-```bash
-make check
-go test -race ./internal/controllerlog ./internal/store ./internal/scheduler ./internal/cli -count=1
-```
-
-The full test suite includes compiler, store, runtime, Local backend, Slurm backend, CLI, workflow fixture, cancellation, recovery, release packaging, and migration compatibility coverage.
-
-## Scope And Deferred Work
-
-The first release intentionally does not include:
-
-- `otter` sub-process integration
-- Snakemake interpreter or native/Snakemake parity testing
-- Kubernetes, SSH, or container backends
-- A web UI, Prometheus, or OpenTelemetry exporter
-- Cross-phase global DAG execution
-- General-purpose Python or user-expression evaluation
-
-Production validation is tracked as gated acceptance rather than a single pass/fail claim. BeaverBS has completed a real-tool synthetic cross-phase Slurm acceptance, while full-size BeaverBS, all BeaverPDX, BeaverRNA, and BeaverRNASEQPDX production acceptance remain open. Local fixtures validate orchestration and declared output contracts but do not replace real-tool, real-reference, Slurm accounting, cache, recovery, and artifact-integrity evidence. See [`doc/implementation-plan.md`](doc/implementation-plan.md#15-后续验收路线图) for the required sequence and evidence.
+The generator fail-closes on the immutable source checksum, expected release, scenario set, and complete paired-repeat structure.

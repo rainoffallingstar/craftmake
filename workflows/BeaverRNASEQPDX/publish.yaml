@@ -30,7 +30,7 @@ jobs:
     resources:
       cores: 1
       memory: 1G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Stage and publish checked RNA-seq PDX results
         run: |
@@ -99,7 +99,7 @@ jobs:
                   raise SystemExit(f"missing staged BAM index: {bai_path}")
               artifact_entries.extend([
                   {
-                      "id": f"graft-rna-alignment-bam-{artifact_index:04d}",
+                      "id": f"graft-alignment-bam-{artifact_index:04d}",
                       "path": f"pdx/graft/{bam_path.name}",
                       "media_type": "application/x-bam",
                       "schema": "sam-bam/v1",
@@ -109,7 +109,7 @@ jobs:
                       },
                   },
                   {
-                      "id": f"graft-rna-alignment-bai-{artifact_index:04d}",
+                      "id": f"graft-alignment-bai-{artifact_index:04d}",
                       "path": f"pdx/graft/{bai_path.name}",
                       "media_type": "application/x-bam-index",
                       "schema": "sam-bai/v1",

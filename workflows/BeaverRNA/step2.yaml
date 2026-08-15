@@ -7,7 +7,7 @@ on:
     modes: [RNASEQ]
 defaults:
   shell: bash
-  environment: otter-core
+  environment: otter-core-bismark-rust-3.1.0-r2
   observability:
     metrics: task
     capture_stdout: true
@@ -28,7 +28,7 @@ jobs:
     resources:
       cores: 40
       memory: 64G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Run STAR
         run: |
@@ -39,9 +39,8 @@ jobs:
       - name: Sort and index STAR BAM
         run: |
           aligned_bam='${{ config.directories.bsmap.main }}/${{ species.name }}/${{ sample.id }}Aligned.sortedByCoord.out.bam'
-          samtools sort -@ '${{ resources.cores }}' -o '${{ outputs.bam }}' "$aligned_bam"
-          samtools index '${{ outputs.bam }}'
-          rm -f "$aligned_bam"
+          mv "$aligned_bam" '${{ outputs.bam }}'
+          samtools index -@ 8 '${{ outputs.bam }}'
 
   qualimap:
     name: Qualimap RNA-seq BAM quality control
@@ -53,9 +52,9 @@ jobs:
       html: "${{ config.directories.qualimap }}/${{ sample.id }}_${{ species.name }}/qualimapReport.html"
       pdf: "${{ config.directories.qualimap }}/${{ sample.id }}_${{ species.name }}/report.pdf"
     resources:
-      cores: 4
+      cores: 2
       memory: 40G
-      partition: cpu
+      partition: amd_512
     env:
       JAVA_OPTS: -Djava.awt.headless=true
     steps:
@@ -75,9 +74,9 @@ jobs:
     outputs:
       counts: "${{ config.directories.methylation_call }}/${{ sample.id }}_${{ species.name }}.txt"
     resources:
-      cores: 5
+      cores: 1
       memory: 16G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Run HTSeq count
         run: |

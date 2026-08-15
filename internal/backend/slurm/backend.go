@@ -346,9 +346,9 @@ func buildScriptWithOptions(request backend.SubmissionRequest, workers []prepare
 	if options.QOS = strings.TrimSpace(options.QOS); options.QOS != "" {
 		fmt.Fprintf(&allocationDirectives, "#SBATCH --qos=%s\n", shellValue(options.QOS))
 	}
-	timeLimit := strings.TrimSpace(options.DefaultTime)
+	timeLimit := strings.TrimSpace(allocationResources.Time)
 	if timeLimit == "" {
-		timeLimit = allocationResources.Time
+		timeLimit = strings.TrimSpace(options.DefaultTime)
 	}
 	if timeLimit == "" {
 		timeLimit = "24:00:00"

@@ -56,6 +56,15 @@ func TestLoadBeaverPDXReferences(t *testing.T) {
 	}
 }
 
+func TestBismarkExecutionGenomeDirectoryAppendsBuildLayout(t *testing.T) {
+	if actual := bismarkExecutionGenomeDirectory("/refs/hg19/indexes/bismark"); actual != "/refs/hg19/indexes/bismark/genome" {
+		t.Fatalf("unexpected Bismark execution root %q", actual)
+	}
+	if actual := bismarkExecutionGenomeDirectory(""); actual != "" {
+		t.Fatalf("empty Bismark index root should remain empty, got %q", actual)
+	}
+}
+
 func TestLoadNormalizesWindowsStyleRuntimePaths(t *testing.T) {
 	temporaryDirectory := t.TempDir()
 	configurationPath := filepath.Join(temporaryDirectory, "config.yaml")

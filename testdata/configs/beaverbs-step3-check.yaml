@@ -44,3 +44,6 @@ reference:
   indices:
     genome:
       - references/bismark-human
+  rnaseq:
+    gtf:
+      - references/human.gtf

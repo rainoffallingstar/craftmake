@@ -7,7 +7,7 @@ on:
     modes: [RNASEQ]
 defaults:
   shell: bash
-  environment: otter-core
+  environment: otter-core-bismark-rust-3.1.0-r2
   observability:
     metrics: task
     capture_stdout: true
@@ -28,7 +28,7 @@ jobs:
     resources:
       cores: 1
       memory: 1G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Write validated RNA-seq PDX artifact manifest
         run: |
@@ -91,44 +91,18 @@ jobs:
           mv -f "$temporary_path" "$output_path"
           trap - EXIT
 
-  patch_bam:
-    name: Recalculate RNA-seq PDX BAM alignment tags
-    scope: sample
-    dimensions: [sample, species]
-    inputs:
-      validated: "${{ jobs.sample_artifacts.outputs.ready }}"
-      bam: "${{ config.directories.bsmap.main }}/${{ sample.id }}_${{ species.name }}.bam"
-      reference: "${{ species.genome_fasta }}"
-    outputs:
-      fixed_bam: "${{ config.directories.bsmap.main }}/${{ sample.id }}_fixed_${{ species.name }}.bam"
-    resources:
-      cores: 4
-      memory: 16G
-      partition: cpu
-    steps:
-      - name: Run Picard SetNmMdAndUqTags
-        run: |
-          if [ -n "${CONDA_PREFIX:-}" ] && [ -x "${CONDA_PREFIX}/lib/jvm/bin/java" ]; then
-            export JAVA_HOME="${CONDA_PREFIX}/lib/jvm"
-          fi
-          picard SetNmMdAndUqTags I='${{ inputs.bam }}' O='${{ outputs.fixed_bam }}' R='${{ inputs.reference }}' IS_BISULFITE_SEQUENCE=false
-          if [[ -L '${{ outputs.fixed_bam }}' || ! -s '${{ outputs.fixed_bam }}' ]]; then
-            printf 'Picard did not produce a non-empty fixed BAM: %s\n' '${{ outputs.fixed_bam }}' >&2
-            exit 1
-          fi
-
   xenofilx:
     name: Filter host reads from RNA-seq PDX BAM files
     scope: global
     dimensions: []
     inputs:
-      patched_bams: "${{ jobs.patch_bam.outputs.fixed_bam }}"
+      validated_artifacts: "${{ jobs.sample_artifacts.outputs.ready }}"
     outputs:
       validation_manifest: "${{ config.directories.bsmap.main }}/Filtered_bams/filtered-bam-validation.json"
     resources:
       cores: 4
       memory: 16G
-      partition: cpu
+      partition: amd_512
     steps:
       - name: Run RNA-seq Xenofilx
         run: |
@@ -136,10 +110,26 @@ jobs:
           mkdir -p "$filtered_directory"
           temporary_filtered_directory="$(mktemp -d "${TMPDIR:-/tmp}/craftmake-xenofilx.XXXXXX")"
           trap 'rm -rf "$temporary_filtered_directory"' EXIT
-          graft_bams=('${{ config.directories.bsmap.main }}'/*_fixed_'${{ config.workflow.species.graft }}'.bam)
-          host_bams=('${{ config.directories.bsmap.main }}'/*_fixed_'${{ config.workflow.species.host }}'.bam)
+          shopt -s nullglob
+          graft_bams=()
+          host_bams=()
+          for graft_bam in "${{ config.directories.bsmap.main }}"/*_"${{ config.workflow.species.graft }}".bam; do
+            [[ "$(basename "$graft_bam")" == *_fixed_* ]] && continue
+            graft_bams+=("$graft_bam")
+          done
+          for host_bam in "${{ config.directories.bsmap.main }}"/*_"${{ config.workflow.species.host }}".bam; do
+            [[ "$(basename "$host_bam")" == *_fixed_* ]] && continue
+            host_bams+=("$host_bam")
+          done
+          if (( ${#graft_bams[@]} == 0 || ${#graft_bams[@]} != ${#host_bams[@]} )); then
+            printf 'expected a non-empty, paired set of original graft and host BAMs\n' >&2
+            exit 1
+          fi
           xenofilx_command=(xenofilx run)
-          for graft_bam in "${graft_bams[@]}"; do xenofilx_command+=(--graft "$graft_bam"); done
+          for graft_bam in "${graft_bams[@]}"; do
+            sample_prefix="$(basename "$graft_bam" _'${{ config.workflow.species.graft }}'.bam)"
+            xenofilx_command+=(--graft "$graft_bam" --output-names "${sample_prefix}_fixed_${{ config.workflow.species.graft }}_Filtered.bam")
+          done
           for host_bam in "${host_bams[@]}"; do xenofilx_command+=(--host "$host_bam"); done
           xenofilx_command+=(--output "$temporary_filtered_directory" --mm-threshold 4 --unmapped-penalty 8 --threads '${{ resources.cores }}' --recalculate-nm --graft-ref '${{ config.reference.graft_fasta }}' --host-ref '${{ config.reference.host_fasta }}')
           xenofilx_exit_code=0
@@ -149,14 +139,11 @@ jobs:
           fi
           samtools_path="${SAMTOOLS:-samtools}"
           for graft_bam in "${graft_bams[@]}"; do
-            sample_prefix="$(basename "$graft_bam" _fixed_'${{ config.workflow.species.graft }}'.bam)"
+            sample_prefix="$(basename "$graft_bam" _'${{ config.workflow.species.graft }}'.bam)"
             temporary_filtered_bam="$temporary_filtered_directory/${sample_prefix}_fixed_${{ config.workflow.species.graft }}_Filtered.bam"
-            if [[ ! -s "$temporary_filtered_bam" ]]; then
-              printf 'Xenofilx did not produce a non-empty filtered BAM: %s\n' "$temporary_filtered_bam" >&2
-              exit 1
-            fi
-            if [[ ! -s "$temporary_filtered_bam.bai" ]]; then
-              printf 'Xenofilx did not produce a non-empty filtered BAM index: %s.bai\n' "$temporary_filtered_bam" >&2
+            temporary_filtered_bai="$temporary_filtered_bam.bai"
+            if [[ ! -s "$temporary_filtered_bam" || ! -s "$temporary_filtered_bai" ]]; then
+              printf 'Xenofilx did not produce non-empty filtered BAM and BAI: %s, %s\n' "$temporary_filtered_bam" "$temporary_filtered_bai" >&2
               exit 1
             fi
             "$samtools_path" quickcheck -v "$temporary_filtered_bam"
@@ -167,11 +154,16 @@ jobs:
             fi
           done
           for graft_bam in "${graft_bams[@]}"; do
-            sample_prefix="$(basename "$graft_bam" _fixed_'${{ config.workflow.species.graft }}'.bam)"
+            sample_prefix="$(basename "$graft_bam" _'${{ config.workflow.species.graft }}'.bam)"
             temporary_filtered_bam="$temporary_filtered_directory/${sample_prefix}_fixed_${{ config.workflow.species.graft }}_Filtered.bam"
             final_filtered_bam="$filtered_directory/${sample_prefix}_fixed_${{ config.workflow.species.graft }}_Filtered.bam"
+            final_filtered_bai="$final_filtered_bam.bai"
             mv "$temporary_filtered_bam" "$final_filtered_bam"
-            mv "$temporary_filtered_bam.bai" "$final_filtered_bam.bai"
+            mv "$temporary_filtered_bam.bai" "$final_filtered_bai"
+            if [[ ! -s "$final_filtered_bai" ]]; then
+              printf 'Xenofilx did not provide a non-empty filtered BAM index: %s\n' "$final_filtered_bai" >&2
+              exit 1
+            fi
           done
           manifest_path='${{ outputs.validation_manifest }}'
           temporary_manifest="$(mktemp "${manifest_path}.tmp.XXXXXX")"
@@ -224,7 +216,7 @@ jobs:
             printf '{"schema_version":"otter.filtered-bam-validation/v1","status":"validated","workflow":"BeaverRNASEQPDX","phase":"step2-check","graft_species":"%s","artifacts":[' '${{ config.workflow.species.graft }}'
             first_artifact=true
             for graft_bam in "${graft_bams[@]}"; do
-              sample_id="$(basename "$graft_bam" _fixed_'${{ config.workflow.species.graft }}'.bam)"
+              sample_id="$(basename "$graft_bam" _'${{ config.workflow.species.graft }}'.bam)"
               filtered_bam="$filtered_directory/${sample_id}_fixed_${{ config.workflow.species.graft }}_Filtered.bam"
               if ! "$first_artifact"; then printf ','; fi
               write_filtered_artifact "$sample_id" "$filtered_bam" "$filtered_bam.bai"

@@ -24,8 +24,8 @@ func TestCompileBeaverBSStep2CheckFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Tasks) != 3 || len(plan.Submissions) != 3 {
-		t.Fatalf("expected three tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
+	if len(plan.Tasks) != 2 || len(plan.Submissions) != 2 {
+		t.Fatalf("expected two sample-validation tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
 	}
 
 	artifactTask := plan.TaskByID["BeaverBS/step2-check/sample_artifacts/sample=sample-a/species=human"]
@@ -44,12 +44,8 @@ func TestCompileBeaverBSStep2CheckFixture(t *testing.T) {
 			t.Fatalf("sample validation manifest command does not contain %q:\n%s", requiredFragment, artifactTask.Steps[0].Command)
 		}
 	}
-	multiQCTask := plan.TaskByID["BeaverBS/step2-check/multiqc"]
-	if multiQCTask == nil || len(multiQCTask.Inputs["sample_artifacts"]) != 2 || len(multiQCTask.Dependencies) != 2 {
-		t.Fatalf("unexpected MultiQC aggregation: %#v", multiQCTask)
-	}
-	if multiQCTask.Outputs["report"] != filepath.Join("workflow", "QC", "summary", "multiqc_report.html") {
-		t.Fatalf("unexpected typed step2 terminal report %q", multiQCTask.Outputs["report"])
+	if plan.TaskByID["BeaverBS/step2-check/multiqc"] != nil {
+		t.Fatal("BeaverBS step2-check must not schedule MultiQC")
 	}
 	if plan.TaskByID["BeaverBS/step2-check/step2_checker"] != nil {
 		t.Fatal("step2-check must not create a marker-only checker task")
