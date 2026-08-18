@@ -107,7 +107,7 @@ jobs:
       validation_manifest: "${{ config.directories.bsmap.main }}/Filtered_bams/filtered-bam-validation.json"
     resources:
       cores: 4
-      memory: 16G
+      memory: 64G
       partition: amd_512
     steps:
       - name: Run Xenofilx
