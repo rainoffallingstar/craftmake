@@ -247,6 +247,7 @@ jobs:
     resources:
       cores: 10
       memory: 34G
+      time: 08:00:00
       partition: amd_512
     steps:
       - name: Build Methrix object
