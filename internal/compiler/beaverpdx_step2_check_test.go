@@ -53,7 +53,7 @@ func TestCompileBeaverPDXStep2CheckFixture(t *testing.T) {
 	if !strings.Contains(xenofilxTask.Steps[0].Command, "for graft_bam") || !strings.Contains(xenofilxTask.Steps[0].Command, `xenofilx_command+=(--graft "$graft_bam" --output-names`) || !strings.Contains(xenofilxTask.Steps[0].Command, "--graft-ref '") || !strings.Contains(xenofilxTask.Steps[0].Command, "--host-ref '") || !strings.Contains(xenofilxTask.Steps[0].Command, "--bisulfite") || !strings.Contains(xenofilxTask.Steps[0].Command, "--recalculate-nm") || !strings.Contains(xenofilxTask.Steps[0].Command, "temporary_filtered_directory") {
 		t.Fatalf("unexpected Xenofilx command: %q", xenofilxTask.Steps[0].Command)
 	}
-	if !strings.Contains(xenofilxTask.Steps[0].Command, "--threads '4'") || !strings.Contains(xenofilxTask.Steps[0].Command, "--sort-memory 96G") || !strings.Contains(xenofilxTask.Steps[0].Command, "temporary_filtered_bai") {
+	if !strings.Contains(xenofilxTask.Steps[0].Command, "--threads '4'") || !strings.Contains(xenofilxTask.Steps[0].Command, "--sort-memory 12G") || !strings.Contains(xenofilxTask.Steps[0].Command, "temporary_filtered_bai") {
 		t.Fatalf("PDX Xenofilx must require and preserve Xenofilx-provided BAI: %q", xenofilxTask.Steps[0].Command)
 	}
 	if xenofilxTask.Outputs["validation_manifest"] != filepath.Join("workflow", "bsmap", "Filtered_bams", "filtered-bam-validation.json") {

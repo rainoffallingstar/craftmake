@@ -137,7 +137,7 @@ jobs:
             xenofilx_command+=(--graft "$graft_bam" --output-names "${sample_prefix}_fixed_${{ config.workflow.species.graft }}_Filtered.bam")
           done
           for host_bam in "${host_bams[@]}"; do xenofilx_command+=(--host "$host_bam"); done
-          xenofilx_command+=(--output "$temporary_filtered_directory" --mm-threshold 6 --unmapped-penalty 8 --threads '${{ resources.cores }}' --sort-memory 96G --recalculate-nm --graft-ref '${{ config.reference.graft_fasta }}' --host-ref '${{ config.reference.host_fasta }}' --bisulfite)
+          xenofilx_command+=(--output "$temporary_filtered_directory" --mm-threshold 6 --unmapped-penalty 8 --threads '${{ resources.cores }}' --sort-memory 12G --recalculate-nm --graft-ref '${{ config.reference.graft_fasta }}' --host-ref '${{ config.reference.host_fasta }}' --bisulfite)
           xenofilx_exit_code=0
           "${xenofilx_command[@]}" || xenofilx_exit_code=$?
           if (( xenofilx_exit_code != 0 )); then
