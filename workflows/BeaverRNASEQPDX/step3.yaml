@@ -40,7 +40,6 @@ jobs:
     inputs:
       sample_counts: "${{ jobs.count_expression.outputs.counts }}"
       annotation: "${{ config.reference.rnaseq.graft_gtf }}"
-      pdata: "${{ config.directories.selfconfig }}/pdata.xlsx"
     outputs:
       outcome: "${{ config.directories.bsmap.main }}/RNASplicing/splicing-outcome.json"
     resources:
@@ -54,7 +53,7 @@ jobs:
           outcome_path='${{ outputs.outcome }}'
           mkdir -p "$splicing_directory"
           if [ '${{ config.metadata.group_levels }}' -ge 2 ]; then
-            matsrun run --root '${{ config.directories.bsmap.main }}' --threads '${{ resources.cores }}' --pdata '${{ inputs.pdata }}' --seqlengthQC '${{ config.directories.qc.main }}' --gtf '${{ inputs.annotation }}' --pdxmode 1
+            matsrun run --root '${{ config.directories.bsmap.main }}' --threads '${{ resources.cores }}' --pdata '${{ config.directories.selfconfig }}/pdata.xlsx' --seqlengthQC '${{ config.directories.qc.main }}' --gtf '${{ inputs.annotation }}' --pdxmode 1
             mapfile -t artifact_paths < <(find "$splicing_directory" -type f ! -name 'splicing-outcome.json' -printf '%P\n' | sort)
             if [ "${#artifact_paths[@]}" -eq 0 ]; then
               printf 'matsrun reported success but produced no splicing artifacts in %s\n' "$splicing_directory" >&2

@@ -58,9 +58,6 @@ func TestCompileBeaverRNASEQPDXStep3Fixture(t *testing.T) {
 	if !containsTaskID(splicingTask.Dependencies, countTaskID) {
 		t.Fatalf("splicing task should depend on sample expression tasks: %#v", splicingTask.Dependencies)
 	}
-	if splicingTask.Inputs["pdata"][0] != filepath.Join("config", "pdata.xlsx") {
-		t.Fatalf("unexpected pdata input: %#v", splicingTask.Inputs["pdata"])
-	}
 	if splicingTask.Resources.Cores != 20 || splicingTask.Resources.MemoryByte != 32<<30 {
 		t.Fatalf("unexpected splicing resources: %#v", splicingTask.Resources)
 	}
