@@ -36,7 +36,7 @@ func TestBeaverPDXStep2CheckRunsLocallyAndUsesCache(t *testing.T) {
 		"--backend", "local",
 		"--max-parallel", "8",
 		"--max-cores", "16",
-		"--max-memory", "64G",
+		"--max-memory", "128G",
 	)
 	firstRunID := outputValue(t, firstRunOutput, "run_id")
 	firstStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", firstRunID)
@@ -88,7 +88,7 @@ func TestBeaverPDXStep2CheckRunsLocallyAndUsesCache(t *testing.T) {
 		"--backend", "local",
 		"--max-parallel", "8",
 		"--max-cores", "16",
-		"--max-memory", "64G",
+		"--max-memory", "128G",
 	)
 	secondRunID := outputValue(t, secondRunOutput, "run_id")
 	secondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID)
