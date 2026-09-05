@@ -1,11 +1,11 @@
 # Craftmake 独立工作流执行器实施计划
 
-> **执行状态更新（2026-08-13）：** 独立 Craftmake CLI 的核心控制面已接近首版完成；父项目的 Gate 6 已接受 RRBS、RNA-seq、BS-PDX 与 RNA-PDX 的有界 executor parity。BS-PDX 与 RNA-PDX 各完成三组平衡 paired scheduler repeats，所有 12 个 cell 均通过输入/输出 checksum 与 mapped-read parity。`craftmake.standalone/v1` 的 schema-first routing、严格 loader、resume loader-kind persistence 与 SRA archive generic DAG 已新增并通过回归；`SRR31480456` standalone Slurm decode `41423708` 与独立 verifier `41423871` 均已完成，确认最终路径 manifest、只读 gzip 输出与每端 `28,865,648` 条记录。该 decode 证据仍需最终 `otter.sra-acquisition/v1` 绑定参考角色，不能单独清除生产输入 gate。生产数据、representative 20-cell matrix、scale 与 clean-host release gate 仍未完成；WGBS 继续 deferred。可审计的当前基准资产保存在 [`doc/benchmarks/`](benchmarks/README.md)。
+> **执行状态更新（2026-09-05）：** 独立 Craftmake CLI 的核心控制面已接近首版完成；父项目 Gate 6 已接受 RRBS、RNA-seq、BS-PDX 与 RNA-PDX 的有界 executor parity，Gate A–D corrected evidence 与 Methx/Methrix parity 也已完成。fresh seven-input legacy-equivalent matrix 未执行；生产数据扩展、representative 20-cell matrix、scale 与 clean-host release gate，以及 WGBS 和额外 Snakemake recovery 均为 deferred、non-blocking extensions。可审计的当前基准资产保存在 [`doc/benchmarks/`](benchmarks/README.md)。
 
 ## 1. 文档状态
 
 - 状态：实施中
-- 最后更新：2026-08-13
+- 最后更新：2026-09-05
 - 目标项目：`/home/fallingstar10/shire/xdxtools/craftmake`
 - 主要语言：Go
 - 首要使用场景：执行和管理 `otter` 的 RRBS、WGBS、BS-seq、RNA-seq 与 PDX 工作流
@@ -29,7 +29,7 @@
 | 阶段 6：迁移 BeaverRNA 与 BeaverRNASEQPDX | 大部分完成 | 90% | BeaverRNA 三个 phase 与 BeaverRNASEQPDX 五个 phase 均已完成 YAML、编译测试和 Local 假工具纵向验收；下一步只做已登记公开数据的真实工具与 Slurm 小样本验收 |
 | 阶段 7：Slurm Controller、Batch srun 与 Sacct | 接近完成 | 98% | Paracloud `amd_512` 已验证真实并发 slot、终态动态补位、pending reason/timeout/scancel、受控 submit-limit 退避后真实重投、sbatch/srun/sacct、断连后 `resume` 和 accounting 延迟补采；仍缺更高负载控制面验收与两个 RNA workflow 的小样本真实集群验收 |
 | 阶段 8：Otter 集成 | Deferred | 0% | 首版不实施 |
-| 阶段 9：Snakemake Compatibility | 父项目 Gate 6 已有有界通过；Craftmake 内嵌解释器 Deferred | — | 显式 compatibility executor 的 RRBS、RNA-seq、BS-PDX 与 RNA-PDX parity 已接受；Craftmake 首版不实现 Snakemake interpreter，representative/scale 与退场决策仍未完成 |
+| 阶段 9：Snakemake Compatibility | 父项目 Gate 6 已有 accepted bounded evidence；Craftmake 内嵌解释器 Deferred | — | 显式 compatibility executor 的 RRBS、RNA-seq、BS-PDX 与 RNA-PDX parity 已接受；后续 Snakemake interruption/recovery、representative/scale 与退场决策均为 deferred extensions |
 | 阶段 10：独立 CLI 打包与发布 | 接近完成 | 95% | Makefile 安装/卸载、Linux amd64/arm64 静态发布包、checksums、解包后 catalog 路由 smoke、CI、release workflow 和首版 README 已完成；正式发布前仍需外部干净 Linux 与真实 Slurm 安装验收 |
 
 ### 1.2 已完成的关键能力
@@ -64,7 +64,7 @@
 
 ### 1.3 当前未完成的关键能力
 
-- 四类 workflow 的真实生信工具与 Slurm 小样本验收仍在推进；BeaverBS 与 BeaverPDX 五个 phase 均已完成 synthetic 跨 phase 真实工具链和全缓存 replay，BeaverPDX Gate 1 的选择性失效与运行中恢复也已通过；当前只剩用已登记公开数据补齐/复核 BeaverBS、BeaverPDX 小样本 provenance，并完成 BeaverRNA、BeaverRNASEQPDX 的真实工具小样本验收。生产规模与统一多组学验收明确后移，不计入当前 workflow gate。
+- 当前父项目 Gate 6 已接受四类 workflow 的有界 executor parity、corrected Gate A–D evidence 和 Methx/Methrix parity；fresh seven-input legacy-equivalent matrix 未执行。Craftmake 本身仍不声称 production-scale biology 或 statistical-power approval，相关代表性/scale qualification 属于 deferred extensions。
 - 正式发布前仍需在外部干净 Linux 环境验证安装、Local smoke、真实 Slurm smoke 和旧数据库迁移；本工作区内的 checksum、解包后二进制、自动 workflow catalog 路由和静态 ELF 检查已通过。
 - 小样本验收需要目标集群上的完整 reference 和跨 phase 产物；Paracloud 账号、Slurm、真实工具环境及 static PIE `enva` 已可用，不再列为阻塞项。
 - Paracloud 的全局 `~/.cargo/bin/methx` 仍缺少 `libhdf5_serial.so.103`，但 BeaverBS/BeaverPDX workflow 已支持通过 `METHX` 使用固定的 `$HOME/methx/target/release/methx`；该二进制在 `LD_LIBRARY_PATH` 清空的计算节点上通过真实输入验收。干净 Linux 发布仍需将 Methrix 及其 HDF5 依赖封装为可移植资产或受管理环境。

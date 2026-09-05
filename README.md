@@ -2,7 +2,7 @@
 
 `craftmake` is the native workflow executor for [`otter`](https://github.com/). It compiles versioned workflow YAML into task DAGs, runs tasks locally or through Slurm, persists state in SQLite, and exposes caching, recovery, cancellation, logs, and reports.
 
-> **Project status:** first-release control-plane implementation is substantially complete. Gate 6 production validation is still in progress; this repository must not be described as production-throughput approved.
+> **Project status (2026-09-05):** The control-plane implementation is substantially complete. The accepted Gate 6 scope includes bounded Craftmake–Snakemake executor evidence, corrected Gate A–D evidence, and Methx/Methrix parity. The fresh seven-input legacy-equivalent matrix was not run; representative repeats, production-scale throughput, WGBS, and additional Snakemake recovery are deferred and non-blocking. This repository must not be described as production-throughput approved.
 
 ## At a glance
 
@@ -13,7 +13,7 @@
 | Immutable run/reference boundary | Accepted in Gate 6 runtime evidence |
 | Craftmake/Snakemake executor parity | Accepted for RRBS, RNA-seq, BS-PDX, and RNA-PDX bounded runs |
 | Repeated PDX scheduler comparison | Three paired repeats per scenario; descriptive evidence |
-| Representative matrix and production-scale throughput | Not started; blocked on approved production inputs |
+| Representative matrix and production-scale throughput | Deferred, non-blocking future qualification |
 | WGBS | Deferred |
 
 ## Scope
@@ -46,8 +46,8 @@ The current implementation is strongest in the execution control plane: CLI and 
 | BS-PDX executor parity | Byte-identical filtered BAM/BAI; `97,182` mapped graft reads. | **Accepted** |
 | RNA-PDX executor parity | Byte-identical filtered BAM/BAI; `118,596` mapped graft reads. | **Accepted** |
 | PDX scheduler benchmark | Three balanced Craftmake/Snakemake pairs per scenario for `step2-check`. | **Accepted, bounded** |
-| Representative matrix | 20-cell matrix with repeated runs. | **Open** |
-| Scale benchmark | Production throughput and scheduler-pressure test. | **Open** |
+| Representative matrix | 20-cell matrix with repeated runs. | **Deferred, non-blocking** |
+| Scale benchmark | Production throughput and scheduler-pressure test. | **Deferred, non-blocking** |
 | WGBS | Production workflow path and canary. | **Deferred** |
 
 All accepted workflow evidence is either synthetic or bounded public-data canary evidence. It establishes orchestration, file contracts, executor parity, and selected recovery behavior. It does not establish full biological coverage or production throughput.
@@ -110,48 +110,23 @@ Full source data, derived statistics, the reproducible generator, and checksums 
 
 Work proceeds in immutable releases and fresh project/run roots. Historical releases and evidence are not modified.
 
-### 1. Requalify production source inputs
+### Current Gate 6 closeout
 
-The five currently registered production candidates are marked `missing_reacquire_for_production`:
+1. Review and archive the [Gate 6 closeout evidence register](../docs/gate6-closeout-evidence-register.json).
+2. Record the final Gate 6 decision log and preserve the explicit limitation that the fresh seven-input legacy-equivalent matrix was not run.
+3. Perform BS-PDX publication and complete artifact-manifest verification only if formal publication is required.
 
-- RRBS: `SRR31480456`
-- WGBS: `SRR6373947`
-- RNA-seq: `SRR8397559`
-- BS-PDX: `SRR23802966`
-- RNA-PDX: `SRR30880970`
+### Deferred extensions
 
-For each reacquisition, record accession metadata, archive checksum, decoded FASTQ checksums, paired-read counts, tool version/command, and reference-role bindings in the create-only `otter.sra-acquisition/v1` manifest. Do not reuse synthetic inputs as public-data evidence. WGBS remains deferred even after reacquisition.
+The following work is intentionally outside the current Gate 6 closeout boundary:
 
-### 2. Complete approved real-data canaries
+- fresh seven-input legacy-equivalent scientific matrix;
+- representative `20 samples × 3 repeats` matrix;
+- production-scale throughput and scheduler-pressure qualification;
+- WGBS `SRR6373947` reference/acquisition requalification;
+- additional Snakemake interruption, retry, resume, and recovery comparison.
 
-Run the registered deterministic small samples for the four active non-WGBS workflows. Each workflow must have a fresh immutable Craftmake run and an explicit Snakemake compatibility run, with artifact verification, semantic review, accounting settlement, empty final queue, and at least one relevant recovery or invalidation check.
-
-### 3. Expand repeated scheduler evidence
-
-The existing PDX result is sufficient for a bounded descriptive comparison only. The next benchmark stage should:
-
-1. preserve the same metric split: controller, queue, worker, and reconciliation;
-2. repeat accepted scenarios with enough pairs to characterize variance;
-3. add topology-identical microbenchmarks when attributing executor overhead;
-4. report medians, ranges or confidence intervals, effect sizes, and classified incidents;
-5. keep output parity and resource envelopes as acceptance gates rather than post-hoc annotations.
-
-### 4. Run the representative matrix
-
-After canary and repeated-run acceptance, execute the planned 20-cell matrix with at least three runs per approved comparison cell. Publish immutable aggregate JSON/TSV evidence, input/output parity checks, resource metrics, queue behavior, retries, recovery outcomes, and incident classification.
-
-### 5. Run scale and release gates
-
-Only after the representative matrix is accepted:
-
-- measure production throughput and scheduler pressure;
-- validate 50–200 ready submissions, slot limits, pending timeout, submit retries, cancellation races, accounting delays, and resume without duplicate submissions;
-- verify clean-Linux installation, release archives, static binaries, catalog routing, old-database migration, and a post-install Slurm smoke;
-- decide whether Craftmake can become the stable default while retaining an explicit Snakemake rollback path.
-
-### Immediate next action
-
-The next operational action is **production-source reacquisition and provenance publication**, followed by fresh real-data canaries. Do not start the 20-cell representative matrix or production-scale throughput tests until source provenance, canary parity, and recovery evidence are accepted.
+These items require separate authorization and new evidence boundaries. The existing Snakemake material remains accepted historical executor/recovery evidence; Craftmake remains the default workflow executor, with no embedded Snakemake interpreter.
 
 ## Quick start
 

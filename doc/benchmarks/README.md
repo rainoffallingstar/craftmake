@@ -23,15 +23,9 @@ Within this specific release, compatibility projection, PDX `step2-check` phase,
 
 ## Next gates
 
-The current PDX comparison closes a bounded scheduler-evidence step only. It does not close representative or production-scale validation.
+This benchmark is a completed, bounded Craftmake-versus-Snakemake executor comparison. It is not an ongoing Snakemake workstream and does not imply a general throughput ranking or a fresh seven-input legacy-equivalent scientific matrix.
 
-1. **Requalify production inputs.** All five registered production candidates are currently `missing_reacquire_for_production`; publish a new create-only `otter.sra-acquisition/v1` record before treating any re-downloaded FASTQ as production evidence.
-2. **Complete real-data canaries.** For the four active non-WGBS scenarios, run fresh immutable Craftmake and explicit Snakemake compatibility canaries with artifact verification, semantic review, accounting settlement, and a relevant recovery/invalidation exercise.
-3. **Expand repeated evidence.** Preserve separate controller, queue, worker, and reconciliation metrics. Use topology-identical microbenchmarks before attributing any difference to executor implementation.
-4. **Run the representative matrix.** Only accepted canary scenarios may enter the planned 20-cell matrix with at least three runs per cell.
-5. **Run scale and release gates.** After representative acceptance, measure production throughput/scheduler pressure and complete clean-Linux installation, archive, migration, and post-install Slurm-smoke validation.
-
-Do not infer a general performance ranking, a production-throughput result, or a Snakemake retirement decision from this benchmark.
+The current Gate 6 closeout actions are limited to reviewing the [closeout evidence register](../../../docs/gate6-closeout-evidence-register.json), recording the final decision log, and performing conditional BS-PDX publication/artifact verification if formal publication is required. Representative repeats, production-scale qualification, WGBS requalification, and additional Snakemake interruption/recovery are deferred non-blocking extensions.
 
 ## Provenance and reproduction
 
