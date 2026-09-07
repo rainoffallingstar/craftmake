@@ -1,0 +1,24 @@
+schema_version: craftmake.standalone/v1
+workflow:
+  name: SRAArchiveDecode
+  phase: decode
+  backend: slurm
+run:
+  id: sra-20260814T1450Z-mouse-rrbs-decode
+  project_dir: /public3/home/scg9946/otter-gate6/acquisitions/mouse-rrbs-SRR10025242-20260814T1450Z
+  state_dir: /public3/home/scg9946/otter-gate6/acquisitions/mouse-rrbs-SRR10025242-20260814T1450Z/.craftmake
+execution:
+  slurm:
+    partition: amd_512
+    max_jobs: 1
+    default_time: 24:00:00
+acquisition:
+  accession: SRR10025242
+  archive_path: /public3/home/scg9946/otter-gate6/acquisitions/mouse-rrbs-SRR10025242-20260814T1450Z/archive/SRR10025242.sra
+  archive_checksum_path: /public3/home/scg9946/otter-gate6/acquisitions/mouse-rrbs-SRR10025242-20260814T1450Z/archive/archive.sha256
+  archive_sha256: 4948ccc03c2fd103e263ef27a062f9d1a76df21c550f2cb16f6d9ad4a905da53
+  archive_md5: b0c7711014fedb64772420123c171786
+  archive_bytes: 752847371
+  output_root: /public3/home/scg9946/otter-gate6/acquisitions/mouse-rrbs-SRR10025242-20260814T1450Z/decoded
+  fasterq_dump: /public3/home/scg9946/TTest/soft/MyMiniconda/bin/fasterq-dump
+  pigz: /public3/home/scg9946/TTest/soft/MyMiniconda/bin/pigz

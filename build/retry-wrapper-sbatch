@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+marker_path="${CRAFTMAKE_TEST_SUBMIT_MARKER:?CRAFTMAKE_TEST_SUBMIT_MARKER is required}"
+if ! test -e "$marker_path"; then
+    printf 'injected\n' > "$marker_path"
+    printf '%s\n' 'sbatch: error: QOSMaxSubmitJobPerUserLimit' >&2
+    exit 1
+fi
+exec /opt/slurm/slurm/bin/sbatch "$@"

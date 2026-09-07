@@ -1,0 +1,24 @@
+schema_version: craftmake.standalone/v1
+workflow:
+  name: SRAArchiveDecode
+  phase: decode
+  backend: slurm
+run:
+  id: sra-20260814T0411Z-rnaseq-decode
+  project_dir: /public3/home/scg9946/otter-gate6/acquisitions/rnaseq-SRR1039508-20260814T0411Z
+  state_dir: /public3/home/scg9946/otter-gate6/acquisitions/rnaseq-SRR1039508-20260814T0411Z/.craftmake
+execution:
+  slurm:
+    partition: amd_512
+    max_jobs: 1
+    default_time: 24:00:00
+acquisition:
+  accession: SRR1039508
+  archive_path: /public3/home/scg9946/otter-gate6/acquisitions/rnaseq-SRR1039508-20260814T0411Z/archive/SRR1039508.sra
+  archive_checksum_path: /public3/home/scg9946/otter-gate6/acquisitions/rnaseq-SRR1039508-20260814T0411Z/archive/archive.sha256
+  archive_sha256: b195eb3ffff696cd081b44e68f693c377c5b25d0374b723ada7c61ba89948373
+  archive_md5: b55775f72aa66e2632adf9d5a5bf0e84
+  archive_bytes: 1665373491
+  output_root: /public3/home/scg9946/otter-gate6/acquisitions/rnaseq-SRR1039508-20260814T0411Z/decoded
+  fasterq_dump: /public3/home/scg9946/TTest/soft/MyMiniconda/bin/fasterq-dump
+  pigz: /public3/home/scg9946/TTest/soft/MyMiniconda/bin/pigz

@@ -1,0 +1,45 @@
+SIDs:
+  - hg38-window-sample
+mode: RRBS
+species: human
+jobid: paracloud-beaverbs-step2-synthetic-hg38-window-20260722
+userid: fixture-user
+input:
+  fastq_dir: /public3/home/scg9946/craftmake-beaverbs-step1-real-20260721/step2-synthetic-hg38-window-20260722/reads-v2
+  suffix: _R1.fastq.gz
+  suffix2: _R2.fastq.gz
+output:
+  raw_dir: /public3/home/scg9946/craftmake-beaverbs-step1-real-20260721/step2-synthetic-hg38-window-20260722/reads-v2
+  trim_dir: /public3/home/scg9946/craftmake-beaverbs-step1-real-20260721/step2-synthetic-hg38-window-20260722/reads-v2
+  workflow_dir: /public3/home/scg9946/craftmake-beaverbs-step1-real-20260721/step2-synthetic-hg38-window-20260722/workflow-v2
+  analysis_dir: /public3/home/scg9946/craftmake-beaverbs-step1-real-20260721/step2-synthetic-hg38-window-20260722/analysis-v2
+  log_dir: /public3/home/scg9946/craftmake-beaverbs-step1-real-20260721/step2-synthetic-hg38-window-20260722/workflow-v2/log
+directories:
+  work: /public3/home/scg9946/craftmake-beaverbs-step1-real-20260721/step2-synthetic-hg38-window-20260722/workflow-v2
+  methylation_call: /public3/home/scg9946/craftmake-beaverbs-step1-real-20260721/step2-synthetic-hg38-window-20260722/workflow-v2/methylation
+  bsmap:
+    main: /public3/home/scg9946/craftmake-beaverbs-step1-real-20260721/step2-synthetic-hg38-window-20260722/workflow-v2/bsmap
+  qualimap: /public3/home/scg9946/craftmake-beaverbs-step1-real-20260721/step2-synthetic-hg38-window-20260722/workflow-v2/QC/qualimap
+  qc:
+    main: /public3/home/scg9946/craftmake-beaverbs-step1-real-20260721/step2-synthetic-hg38-window-20260722/workflow-v2/QC
+  qc_summary: /public3/home/scg9946/craftmake-beaverbs-step1-real-20260721/step2-synthetic-hg38-window-20260722/workflow-v2/QC/summary
+  sid_log: /public3/home/scg9946/craftmake-beaverbs-step1-real-20260721/step2-synthetic-hg38-window-20260722/workflow-v2/log
+workflow:
+  mode: RRBS
+  jobid: paracloud-beaverbs-step2-synthetic-hg38-window-20260722
+  userid: fixture-user
+  species:
+    primary: human
+    secondary: ""
+    name: human
+metadata:
+  sample_ids:
+    - hg38-window-sample
+  user_email: fixture@example.invalid
+reference:
+  files:
+    fasta:
+      - /public3/home/scg9946/craftmake-beaverbs-step1-real-20260721/step2-synthetic-hg38-window-20260722/reference-v2/hg38-window.fasta
+  indices:
+    genome:
+      - /public3/home/scg9946/craftmake-beaverbs-step1-real-20260721/step2-synthetic-hg38-window-20260722/reference-v2

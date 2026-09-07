@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+submission_output="$(/opt/slurm/slurm/bin/sbatch "$@")"
+job_id="${submission_output%%;*}"
+if ! /opt/slurm/slurm/bin/scontrol hold "$job_id"; then
+    /opt/slurm/slurm/bin/scancel "$job_id" || true
+    exit 1
+fi
+printf '%s\n' "$submission_output"
