@@ -216,16 +216,18 @@ func TestResolveSlurmExecutionOptionsHonorsGateMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if partition != "compute" || account != "genomics" || qos != "normal" || allocationTime != "2-00:00:00" || scratchRoot != "/scratch/otter" {
-		t.Fatalf("immutable resources were not preserved: %q %q %q %q %q", partition, account, qos, allocationTime, scratchRoot)
+	if partition != "different" || account != "different" || qos != "different" || allocationTime != "01:00:00" || scratchRoot != "/different" {
+		t.Fatalf("mutable resources were not preserved: %q %q %q %q %q", partition, account, qos, allocationTime, scratchRoot)
 	}
 
+	gateOptions := options
+	gateOptions.gateMode = true
 	if err := command.Flags().Set("partition", "different"); err != nil {
 		t.Fatal(err)
 	}
-	_, _, _, _, _, err = resolveSlurmExecutionOptions(command, options, "different", "", "", "", "")
+	_, _, _, _, _, err = resolveSlurmExecutionOptions(command, gateOptions, "different", "", "", "", "")
 	if err == nil || !strings.Contains(err.Error(), "cannot override immutable") {
-		t.Fatalf("expected immutable partition rejection, got %v", err)
+		t.Fatalf("expected immutable partition rejection in gate mode, got %v", err)
 	}
 }
 

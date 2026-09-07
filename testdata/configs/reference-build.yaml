@@ -20,8 +20,8 @@ reference_build:
   contigs: 19
   star_sjdb_overhang: 149
   index_build_threads: 16
-  otter_binary: /gate6/bin/otter
-  samtools_binary: /gate6/envs/otter-core-bismark-rust-3.1.0-r2/bin/samtools
-  bismark_binary: /gate6/envs/otter-core-bismark-rust-3.1.0-r2/bin/bismark_genome_preparation
-  bowtie2_binary: /gate6/envs/otter-core-bismark-rust-3.1.0-r2/bin/bowtie2-build
-  star_binary: /gate6/envs/otter-core-bismark-rust-3.1.0-r2/bin/STAR
+  otter_binary: /usr/local/bin/otter
+  samtools_binary: /usr/local/bin/samtools
+  bismark_binary: /usr/local/bin/bismark_genome_preparation
+  bowtie2_binary: /usr/local/bin/bowtie2-build
+  star_binary: /usr/local/bin/STAR
