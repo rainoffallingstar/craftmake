@@ -1,0 +1,213 @@
+package cli
+
+import (
+	"encoding/json"
+	"fmt"
+	"path/filepath"
+	"runtime"
+	"strings"
+
+	actionadapter "github.com/fallingstar10/craftmake/internal/adapters/action"
+	"github.com/fallingstar10/craftmake/internal/adapters/standalone"
+	"github.com/fallingstar10/craftmake/internal/backend"
+	"github.com/fallingstar10/craftmake/internal/backend/local"
+	"github.com/fallingstar10/craftmake/internal/compiler"
+	"github.com/fallingstar10/craftmake/internal/scheduler"
+	"github.com/fallingstar10/craftmake/internal/store"
+	"github.com/fallingstar10/craftmake/pkg/protocol"
+	"github.com/spf13/cobra"
+)
+
+func loadActionPlan(projectDir, name string, overrides map[string]string) (*compiler.Plan, commonOptions, error) {
+	path, err := actionadapter.Resolve(projectDir, name)
+	if err != nil {
+		return nil, commonOptions{}, err
+	}
+	loaded, err := actionadapter.Load(path, overrides, projectDir, filepath.Join(projectDir, ".craftmake", "state"))
+	if err != nil {
+		return nil, commonOptions{}, err
+	}
+	plan, err := compiler.Compile(loaded.Workflow, loaded.Context)
+	if err != nil {
+		return nil, commonOptions{}, fmt.Errorf("compile action %q: %w", name, err)
+	}
+	options := commonOptions{workflowPath: path, projectDir: projectDir, stateDir: filepath.Join(projectDir, ".craftmake", "state"), resolvedBackend: loaded.Context.Workflow.Backend, configKind: standalone.ConfigKindAction}
+	return plan, options, nil
+}
+
+func newActionCommand(buildInfo BuildInfo) *cobra.Command {
+	parent := &cobra.Command{Use: "action", Short: "Discover and run .craftmake actions"}
+	parent.AddCommand(newActionListCommand(), newActionPlanCommand(), newActionRunCommand(buildInfo))
+	return parent
+}
+
+func newActionListCommand() *cobra.Command {
+	var dir string
+	command := &cobra.Command{Use: "list", Short: "List actions", Args: noArguments, RunE: func(command *cobra.Command, _ []string) error {
+		if dir == "" {
+			dir = "."
+		}
+		entries, err := actionadapter.Discover(dir)
+		if err != nil {
+			return configurationError(err)
+		}
+		for _, entry := range entries {
+			fmt.Fprintf(command.OutOrStdout(), "%s\t%s\t%s\n", entry.Name, entry.Kind, filepath.Base(entry.Path))
+		}
+		return nil
+	}}
+	command.Flags().StringVar(&dir, "dir", ".", "Project directory")
+	return command
+}
+
+func newActionPlanCommand() *cobra.Command {
+	var dir, config string
+	var inputValues []string
+	command := &cobra.Command{Use: "plan NAME", Short: "Compile an action plan", Args: exactArgs(1), RunE: func(command *cobra.Command, args []string) error {
+		overrides, err := parseActionInputs(inputValues)
+		if err != nil {
+			return usageError("%s", err.Error())
+		}
+		if config != "" {
+			options := commonOptions{workflowPath: filepath.Join(dir, ".craftmake", args[0]+".yaml"), configPath: config, projectDir: dir}
+			plan, err := loadPlan(&options)
+			if err != nil {
+				return err
+			}
+			printPlan(command, plan)
+			return nil
+		}
+		plan, _, err := loadActionPlan(dir, args[0], overrides)
+		if err != nil {
+			return configurationError(err)
+		}
+		printPlan(command, plan)
+		return nil
+	}}
+	command.Flags().StringVar(&dir, "dir", ".", "Project directory")
+	command.Flags().StringVar(&config, "config", "", "Existing workflow configuration")
+	command.Flags().StringArrayVar(&inputValues, "input", nil, "Action input KEY=VALUE")
+	return command
+}
+
+func parseActionInputs(values []string) (map[string]string, error) {
+	result := map[string]string{}
+	for _, value := range values {
+		key, raw, ok := strings.Cut(value, "=")
+		if !ok || strings.TrimSpace(key) == "" {
+			return nil, fmt.Errorf("input must use KEY=VALUE: %q", value)
+		}
+		if _, exists := result[key]; exists {
+			return nil, fmt.Errorf("input %q was provided more than once", key)
+		}
+		result[key] = raw
+	}
+	return result, nil
+}
+
+func exactArgs(count int) cobra.PositionalArgs {
+	return func(command *cobra.Command, args []string) error {
+		if len(args) != count {
+			return usageError("command %q requires %d argument(s)", command.CommandPath(), count)
+		}
+		return nil
+	}
+}
+
+func newActionRunCommand(buildInfo BuildInfo) *cobra.Command {
+	var dir, config, backendName, stateDir, runID, format string
+	var inputValues []string
+	var workers, maxParallel int
+	var force, dryRun bool
+	command := &cobra.Command{Use: "run NAME", Short: "Run an action", Args: exactArgs(1), RunE: func(command *cobra.Command, args []string) error {
+		overrides, err := parseActionInputs(inputValues)
+		if err != nil {
+			return usageError("%s", err.Error())
+		}
+		var plan *compiler.Plan
+		var options commonOptions
+		if config != "" {
+			workflowPath, resolveErr := actionadapter.Resolve(dir, args[0])
+			if resolveErr != nil {
+				return configurationError(resolveErr)
+			}
+			options = commonOptions{workflowPath: workflowPath, configPath: config, projectDir: dir, stateDir: stateDir}
+			plan, err = loadPlan(&options)
+		} else {
+			plan, options, err = loadActionPlan(dir, args[0], overrides)
+			if stateDir != "" {
+				options.stateDir = stateDir
+			}
+		}
+		if err != nil {
+			return configurationError(err)
+		}
+		options.format = format
+		if backendName == "" {
+			backendName = options.resolvedBackend
+		}
+		if backendName == "" {
+			backendName = "local"
+		}
+		if backendName != "local" {
+			return usageError("action backend %q is not implemented yet; local is available", backendName)
+		}
+		if dryRun {
+			printPlan(command, plan)
+			return nil
+		}
+		if workers == 0 {
+			workers = maxParallel
+		}
+		if workers <= 0 {
+			workers = runtime.NumCPU()
+		}
+		options.resolvedBackend = backendName
+		projectDirectory, stateDirectory, databasePath, err := resolveRuntimePaths(options)
+		if err != nil {
+			return stateFailureError(err)
+		}
+		digests, err := calculatePlanDigests(options.configPath, options.workflowPath)
+		if err != nil {
+			return configurationError(err)
+		}
+		selectedBackend := backend.Backend(local.New())
+		stateStore, err := store.Open(command.Context(), databasePath)
+		if err != nil {
+			return stateFailureError(err)
+		}
+		defer stateStore.Close()
+		if runID == "" {
+			runID = defaultMutableRunID()
+		}
+		taskScheduler, err := scheduler.New(plan, stateStore, scheduler.Options{ProjectDirectory: projectDirectory, StateDirectory: stateDirectory, ConfigPath: options.configPath, ConfigDigest: digests.Config, WorkflowPath: options.workflowPath, WorkflowDigest: digests.Workflow, Backend: selectedBackend, MaxParallel: workers, MaxCores: 0, MaxMemoryBytes: 0, Force: force, Version: buildInfo.Version, RunID: runID, LoaderKind: string(options.configKind)})
+		if err != nil {
+			return backendFailureError(err)
+		}
+		actualRunID, runErr := taskScheduler.Run(command.Context())
+		payload, marshalErr := json.Marshal(protocol.RunPayload{Backend: backendName, Status: map[bool]string{true: "succeeded", false: "failed"}[runErr == nil]})
+		if marshalErr != nil {
+			return internalFailureError(marshalErr)
+		}
+		envelope := protocol.NewCommandEnvelope("action run", runErr == nil, actualRunID, databasePath, taskScheduler.ControllerLogPath(), payload)
+		if outputErr := writeCommandOutput(command, options.format, envelope, func() error {
+			fmt.Fprintf(command.OutOrStdout(), "run_id: %s\nstate: %s\ncontroller_log: %s\n", actualRunID, databasePath, taskScheduler.ControllerLogPath())
+			return nil
+		}); outputErr != nil {
+			return outputErr
+		}
+		return taskFailureError(runErr)
+	}}
+	command.Flags().StringVar(&dir, "dir", ".", "Project directory")
+	command.Flags().StringVar(&config, "config", "", "Existing workflow configuration")
+	command.Flags().StringArrayVar(&inputValues, "input", nil, "Action input KEY=VALUE")
+	command.Flags().StringVar(&backendName, "backend", "", "Override the action backend")
+	command.Flags().StringVar(&stateDir, "state-dir", "", "Craftmake state directory")
+	command.Flags().StringVar(&runID, "run-id", "", "Run identifier")
+	command.Flags().IntVar(&workers, "workers", 0, "Maximum active submissions")
+	command.Flags().IntVar(&maxParallel, "max-parallel", runtime.NumCPU(), "Maximum active submissions when workers is zero")
+	command.Flags().BoolVar(&force, "force", false, "Ignore fingerprint cache")
+	command.Flags().BoolVar(&dryRun, "dry-run", false, "Compile and display without executing")
+	command.Flags().StringVar(&format, "format", "text", "Output format (text/json/jsonl)")
+	return command
+}

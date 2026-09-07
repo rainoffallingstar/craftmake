@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	actionadapter "github.com/fallingstar10/craftmake/internal/adapters/action"
 	"github.com/fallingstar10/craftmake/internal/adapters/otter"
 	"github.com/fallingstar10/craftmake/internal/adapters/standalone"
 	"github.com/fallingstar10/craftmake/internal/backend"
@@ -86,7 +87,7 @@ func NewRootCommand(buildInfo BuildInfo) *cobra.Command {
 		SilenceErrors: true,
 		Version:       fmt.Sprintf("%s+%s (%s)", buildInfo.Version, buildInfo.Commit, buildInfo.Date),
 	}
-	commands := []*cobra.Command{newValidateCommand(), newPlanCommand(), newRunCommand(buildInfo), newStatusCommand(), newCancelCommand(), newReportCommand(), newLogsCommand(), newDoctorCommand(), newResumeCommand(buildInfo), newTaskRunnerCommand()}
+	commands := []*cobra.Command{newValidateCommand(), newPlanCommand(), newRunCommand(buildInfo), newActionCommand(buildInfo), newStatusCommand(), newCancelCommand(), newReportCommand(), newLogsCommand(), newDoctorCommand(), newResumeCommand(buildInfo), newTaskRunnerCommand()}
 	for _, command := range commands {
 		if command.Args == nil {
 			command.Args = noArguments
@@ -1135,7 +1136,28 @@ func addPlanFlags(command *cobra.Command, options *commonOptions) {
 }
 
 func loadPlan(options *commonOptions) (*compiler.Plan, error) {
-	if options.configPath == "" {
+	if options.configPath == "" && options.workflowPath != "" {
+		kind, detectErr := standalone.DetectConfigKind(options.workflowPath)
+		if detectErr == nil && kind == standalone.ConfigKindAction {
+			projectDir := options.projectDir
+			if projectDir == "" {
+				projectDir = filepath.Dir(filepath.Dir(options.workflowPath))
+			}
+			stateDir := options.stateDir
+			if stateDir == "" {
+				stateDir = filepath.Join(projectDir, ".craftmake", "state")
+			}
+			loaded, loadErr := actionadapter.Load(options.workflowPath, nil, projectDir, stateDir)
+			if loadErr != nil {
+				return nil, configurationError(loadErr)
+			}
+			plan, compileErr := compiler.Compile(loaded.Workflow, loaded.Context)
+			if compileErr != nil {
+				return nil, compilationError(compileErr)
+			}
+			options.projectDir, options.stateDir, options.configKind, options.resolvedBackend, options.execution = projectDir, stateDir, kind, loaded.Context.Workflow.Backend, loaded.Context.Execution
+			return plan, nil
+		}
 		return nil, usageError("--config is required")
 	}
 	absoluteConfigPath, err := filepath.Abs(options.configPath)

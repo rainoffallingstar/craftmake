@@ -66,6 +66,7 @@ type ResourceSpec struct {
 }
 
 type StepSpec struct {
+	ID          string            `yaml:"id"`
 	Name        string            `yaml:"name"`
 	Run         string            `yaml:"run"`
 	Shell       string            `yaml:"shell"`
