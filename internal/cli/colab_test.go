@@ -29,4 +29,13 @@ func TestColabAuthCLIConfiguresAndMountsNamedSession(t *testing.T) {
 	if !strings.Contains(output.String(), "\"status\": \"ready-for-backend-mount\"") {
 		t.Fatalf("unexpected output: %s", output.String())
 	}
+	doctor := newColabDoctorCommand()
+	doctor.SetArgs([]string{"--config", path, "--session", "gpu"})
+	doctor.SetOut(&output)
+	if err := doctor.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "\"ready\": true") {
+		t.Fatalf("unexpected doctor output: %s", output.String())
+	}
 }

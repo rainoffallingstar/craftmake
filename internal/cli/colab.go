@@ -16,7 +16,7 @@ func newColabCommand() *cobra.Command {
 	auth.AddCommand(newColabAuthConfigureCommand(), newColabAuthShowCommand())
 	drive := &cobra.Command{Use: "drive", Short: "Manage Google Drive session mounts"}
 	drive.AddCommand(newColabDriveMountCommand())
-	parent.AddCommand(auth, drive)
+	parent.AddCommand(auth, drive, newColabDoctorCommand())
 	return parent
 }
 
@@ -79,6 +79,47 @@ func newColabDriveMountCommand() *cobra.Command {
 		plan := map[string]any{"session": auth.SessionID, "auth_config": path, "mount_path": auth.MountPath, "drive_root": auth.DriveRoot, "status": "ready-for-backend-mount"}
 		data, _ := json.MarshalIndent(plan, "", "  ")
 		fmt.Fprintln(command.OutOrStdout(), string(data))
+		return nil
+	}}
+	command.Flags().StringVar(&configPath, "config", "~/.config/craftmake/colab-auth.json", "Authentication config path")
+	command.Flags().StringVar(&sessionID, "session", "", "Named Colab session")
+	return command
+}
+
+func newColabDoctorCommand() *cobra.Command {
+	var configPath, sessionID string
+	command := &cobra.Command{Use: "doctor", Short: "Check offline Colab session readiness", Args: noArguments, RunE: func(command *cobra.Command, _ []string) error {
+		path, err := expandUserPath(configPath)
+		if err != nil {
+			return usageError("invalid --config: %v", err)
+		}
+		checks := []map[string]any{}
+		if _, statErr := os.Stat(path); statErr != nil {
+			checks = append(checks, map[string]any{"name": "auth_config", "ok": false, "detail": statErr.Error()})
+		} else {
+			checks = append(checks, map[string]any{"name": "auth_config", "ok": true, "detail": path})
+		}
+		if sessionID == "" {
+			checks = append(checks, map[string]any{"name": "session", "ok": false, "detail": "--session is required"})
+		} else if auth, loadErr := colab.LoadSessionAuth(path, sessionID); loadErr != nil {
+			checks = append(checks, map[string]any{"name": "session", "ok": false, "detail": loadErr.Error()})
+		} else {
+			checks = append(checks, map[string]any{"name": "session", "ok": true, "detail": auth.SessionID})
+			checks = append(checks, map[string]any{"name": "control_plane_credential", "ok": auth.ColabCredentialFile != "" || auth.ColabRefreshTokenEnv != ""})
+			checks = append(checks, map[string]any{"name": "drive_credential", "ok": auth.DriveCredentialFile != "" || auth.DriveRefreshTokenEnv != ""})
+			checks = append(checks, map[string]any{"name": "mount_config", "ok": auth.MountPath != "" && auth.DriveRoot != ""})
+		}
+		ready := true
+		for _, check := range checks {
+			if ok, _ := check["ok"].(bool); !ok {
+				ready = false
+			}
+		}
+		data, _ := json.MarshalIndent(map[string]any{"session": sessionID, "auth_config": path, "ready": ready, "mode": "offline-preflight", "checks": checks}, "", "  ")
+		fmt.Fprintln(command.OutOrStdout(), string(data))
+		if !ready {
+			return configurationError(fmt.Errorf("Colab session is not ready"))
+		}
 		return nil
 	}}
 	command.Flags().StringVar(&configPath, "config", "~/.config/craftmake/colab-auth.json", "Authentication config path")
