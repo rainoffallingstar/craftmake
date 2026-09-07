@@ -18,14 +18,25 @@ type WorkspaceSyncRequest struct {
 }
 
 type WorkspaceSyncer interface {
-	Sync(context.Context, WorkspaceSyncRequest) error
+	SyncIn(context.Context, WorkspaceSyncRequest) error
+	SyncOut(context.Context, WorkspaceSyncRequest) error
 }
 
 // FileWorkspaceSyncer is an offline/test implementation. A production adapter
 // can use Drive API/FUSE or an rsync-like transport behind the same seam.
 type FileWorkspaceSyncer struct{}
 
-func (FileWorkspaceSyncer) Sync(ctx context.Context, request WorkspaceSyncRequest) error {
+func (FileWorkspaceSyncer) SyncIn(ctx context.Context, request WorkspaceSyncRequest) error {
+	request.Direction = "in"
+	return syncWorkspace(ctx, request)
+}
+
+func (FileWorkspaceSyncer) SyncOut(ctx context.Context, request WorkspaceSyncRequest) error {
+	request.Direction = "out"
+	return syncWorkspace(ctx, request)
+}
+
+func syncWorkspace(ctx context.Context, request WorkspaceSyncRequest) error {
 	if request.LocalRoot == "" || request.RemoteRoot == "" {
 		return fmt.Errorf("workspace sync requires local_root and remote_root")
 	}

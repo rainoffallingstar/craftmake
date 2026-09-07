@@ -18,7 +18,11 @@ func (f *fakeMountPreflight) CheckMount(_ context.Context, request DriveMountReq
 
 type fakeWorkspaceSyncer struct{ requests []WorkspaceSyncRequest }
 
-func (f *fakeWorkspaceSyncer) Sync(_ context.Context, request WorkspaceSyncRequest) error {
+func (f *fakeWorkspaceSyncer) SyncIn(_ context.Context, request WorkspaceSyncRequest) error {
+	f.requests = append(f.requests, request)
+	return nil
+}
+func (f *fakeWorkspaceSyncer) SyncOut(_ context.Context, request WorkspaceSyncRequest) error {
 	f.requests = append(f.requests, request)
 	return nil
 }

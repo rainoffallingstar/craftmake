@@ -72,7 +72,8 @@
 
 - 本地项目目录是 source root；Colab/Drive 上的 durable root 是 remote root；runtime `/content` 仅作 scratch。
 - run 开始时执行一次 `local → remote` 同步，默认排除 `.craftmake/state` 和 `.git`；run 结束时执行一次 `remote → local` 同步，用于取回输出和诊断日志。
-- 同步通过 `WorkspaceSyncer` seam 实现；当前 `FileWorkspaceSyncer` 仅用于离线测试，真实实现可替换为 Drive API/FUSE 或受控传输器。
+- 同步通过 `WorkspaceSyncer` seam 实现；当前 `FileWorkspaceSyncer` 仅用于离线测试，真实实现可替换为 Drive API/FUSE 或受控传输器。接口区分 `SyncIn` 与 `SyncOut`，并可用 `WorkspaceManifest` 对文件路径、大小、权限和 SHA-256 做确定性校验。
+- `craftmake.action/v1` 可选声明 `colab` 配置块，包含 session、auth config、drive/remote/scratch root、同步方向和排除项；该块只能表达运行意图，不承载 OAuth token。
 - `~/.config/craftmake/colab-auth.json` 使用 `craftmake.colab-auth/v1`，按 `session_id` 保存 Colab credential reference、Drive credential reference、`drive_root` 与 `mount_path`，文件权限必须为 `0600`。
 - `craftmake colab auth configure` 只写 credential references，不把 token 写入配置；`craftmake colab drive mount --session NAME` 校验指定 session 并生成 mount plan。真正的 runtime mount 由 Colab backend 在 `BeginRun` 自动读取该 session 配置并调用 `DriveMountPreflight`。
 - Control-plane credential、Drive API credential、runtime mount authorization 是独立能力；没有真实 adapter 时 CLI 与 fake tests 不宣称已经完成线上挂载。

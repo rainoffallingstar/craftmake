@@ -127,7 +127,7 @@ func (b *Backend) BeginRun(ctx context.Context, run backend.RunContext) error {
 		if len(excludes) == 0 {
 			excludes = []string{".craftmake/state", ".git"}
 		}
-		if err := b.Workspace.Sync(ctx, WorkspaceSyncRequest{RunID: run.RunID, LocalRoot: config.LocalRoot, RemoteRoot: target, Direction: "in", Excludes: excludes}); err != nil {
+		if err := b.Workspace.SyncIn(ctx, WorkspaceSyncRequest{RunID: run.RunID, LocalRoot: config.LocalRoot, RemoteRoot: target, Direction: "in", Excludes: excludes}); err != nil {
 			return rollback(fmt.Errorf("sync workspace to Colab: %w", err))
 		}
 	}
@@ -167,7 +167,7 @@ func (b *Backend) EndRun(ctx context.Context, outcome backend.RunOutcome) error 
 		if len(excludes) == 0 {
 			excludes = []string{".craftmake/state", ".git"}
 		}
-		syncErr = b.Workspace.Sync(ctx, WorkspaceSyncRequest{RunID: outcome.RunID, LocalRoot: target, RemoteRoot: outcome.ProjectDirectory, Direction: "out", Excludes: excludes})
+		syncErr = b.Workspace.SyncOut(ctx, WorkspaceSyncRequest{RunID: outcome.RunID, LocalRoot: target, RemoteRoot: outcome.ProjectDirectory, Direction: "out", Excludes: excludes})
 	}
 	releaseErr := b.Control.ReleaseRuntime(ctx, runtime)
 	if syncErr != nil && releaseErr != nil {

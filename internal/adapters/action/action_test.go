@@ -98,4 +98,23 @@ func TestDiscoverOnlyFlatYAMLFiles(t *testing.T) {
 	}
 }
 
+func TestLoadRendersColabSettingsFromArgsAndEnv(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "action.yaml")
+	content := []byte("schema_version: craftmake.action/v1\nname: colab\nbackend: colab\ninputs:\n  session: {}\nenv:\n  RUN_ID: ci-7\ncolab:\n  session: ${{ args.session }}\n  drive_root: /content/drive/MyDrive/${{ env.RUN_ID }}\n  excludes:\n    - .git\njobs:\n  run:\n    steps:\n      - run: echo ok\n")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadWithSources(path, map[string]string{"session": "gpu"}, map[string]string{}, root, filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Action.Colab == nil || loaded.Action.Colab.Session != "gpu" || loaded.Action.Colab.DriveRoot != "/content/drive/MyDrive/ci-7" {
+		t.Fatalf("unexpected Colab config: %#v", loaded.Action.Colab)
+	}
+	if loaded.Context.Raw["colab"] == nil {
+		t.Fatal("expected Colab context")
+	}
+}
+
 var _ = spec.CurrentVersion
