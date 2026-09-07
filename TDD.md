@@ -78,6 +78,22 @@
 - `craftmake colab auth configure` 只写 credential references，不把 token 写入配置；`craftmake colab drive mount --session NAME` 校验指定 session 并生成 mount plan。真正的 runtime mount 由 Colab backend 在 `BeginRun` 自动读取该 session 配置并调用 `DriveMountPreflight`。
 - Control-plane credential、Drive API credential、runtime mount authorization 是独立能力；没有真实 adapter 时 CLI 与 fake tests 不宣称已经完成线上挂载。
 
+## 2.6 参考仓库抽取的 Colab v1 协议（googlecolab/colab-vscode + MurphyLo/colab-cli）
+
+从 `googlecolab/colab-vscode` 的 `src/colab/client/v1` 与 `MurphyLo/colab-cli` 抽取，作为真实 adapter 的契约基线（可离线单测，不需真实账号）：
+
+- 两个 base domain：`colabDomain = https://colab.research.google.com`（`/tun/m` 隧道）与 `colabGapiDomain = https://colab.pa.googleapis.com`（`/v1` 用户/代理）。
+- assign：`GET /tun/m/assign?nbh=<websafe-base64>&variant=<VARIANT>&acc=<accel>&shape=<n>&version=<ver>`。若无已分配机器返回 `{acc,nbh,p,token,variant}`（`token` 为 XSRF token），需再 `POST` 相同 URL 并在 `X-Goog-Colab-Token` 头携带该 token，返回 `{endpoint,accel,variant,machineShape,runtimeProxyInfo:{token,url}}`。
+- unassign：`GET /tun/m/unassign/<endpoint>` 返回 `{token}`，再 `POST` 携带 XSRF token。
+- keep-alive：`GET /tun/m/<endpoint>/keep-alive/` 携带 `X-Colab-Tunnel: Google`。
+- refresh proxy：`GET /v1/runtime-proxy-token?endpoint=<endpoint>&port=8080` 返回 `{token, tokenTtl:"Ns", url}`。
+- user-info：`GET /v1/user-info`（可选 `get_ccu_consumption_info=true`）返回 `{subscriptionTier, eligibleAccelerators:[{variant,models}], ineligibleAccelerators}`。
+- 认证：`Authorization: Bearer <access_token>`；401 时刷新并重试一次（colab-vscode createAuthMiddleware）。colab-cli 用 loopback OAuth + PKCE S256 + `access_type=offline&prompt=consent`，刷新 margin 为 5 分钟，`invalid_grant` 清 session。
+- 隧道内 notebook 执行与文件读写经 runtime proxy url，并携带 `X-Colab-Runtime-Proxy-Token`。
+
+`ColabServerClient`（assign/unassign/keep-alive/refresh-proxy/user-info）、`ProxyNotebookExecutor`、loopback PKCE OAuth、`TokenManager`（margin 刷新）已实现并离线可测；生产 domain/token 端点在接入真实账号前可配置替换。
+
+
 ## 3. 统一架构
 
 ```text
