@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/fallingstar10/craftmake/internal/backend"
+	"github.com/fallingstar10/craftmake/pkg/protocol"
 )
 
 type RuntimeRequest struct {
@@ -23,19 +25,30 @@ type NotebookExecutor interface {
 	ExecuteNotebook(context.Context, Runtime, []byte) (string, error)
 }
 
+type DriveMountRequest struct{ RunID, MountPath, DriveRoot string }
+type DriveMountPreflight interface {
+	CheckMount(context.Context, DriveMountRequest) error
+}
+type LogMaterializer interface {
+	Materialize(context.Context, string, string) error
+}
+
 type Config struct {
 	RemoteRoot  string
 	ScratchRoot string
 	DriveRoot   string
+	MountPath   string
 }
 
 type Backend struct {
-	Config   Config
-	Control  ControlPlane
-	Executor NotebookExecutor
-	mutex    sync.Mutex
-	runtime  Runtime
-	active   bool
+	Config         Config
+	Control        ControlPlane
+	Executor       NotebookExecutor
+	MountPreflight DriveMountPreflight
+	Materializer   LogMaterializer
+	mutex          sync.Mutex
+	runtime        Runtime
+	active         bool
 }
 
 func (b *Backend) Name() string { return "colab" }
@@ -43,6 +56,18 @@ func (b *Backend) Name() string { return "colab" }
 func (b *Backend) BeginRun(ctx context.Context, run backend.RunContext) error {
 	if b.Control == nil || b.Executor == nil {
 		return fmt.Errorf("colab control plane and notebook executor are required")
+	}
+	if b.Config.DriveRoot != "" {
+		if b.MountPreflight == nil {
+			return fmt.Errorf("drive mount preflight is required when drive root is configured")
+		}
+		mountPath := b.Config.MountPath
+		if mountPath == "" {
+			mountPath = "/content/drive"
+		}
+		if err := b.MountPreflight.CheckMount(ctx, DriveMountRequest{RunID: run.RunID, MountPath: mountPath, DriveRoot: b.Config.DriveRoot}); err != nil {
+			return fmt.Errorf("drive mount preflight: %w", err)
+		}
 	}
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
@@ -111,9 +136,52 @@ func (b *Backend) RunSubmission(ctx context.Context, submissionID string, reques
 			result.Tasks[manifest.TaskID] = backend.TaskOutcome{Err: err}
 			continue
 		}
+		if err := b.materializeTaskLogs(ctx, taskResult, manifest, mapping); err != nil {
+			taskResult.ObservabilityErrors = append(taskResult.ObservabilityErrors, err.Error())
+		}
 		result.Tasks[manifest.TaskID] = backend.TaskOutcome{Result: &backend.Result{TaskResult: taskResult, BackendID: "colab:" + manifest.TaskID}}
 	}
 	return result, nil
+}
+
+func (b *Backend) materializeTaskLogs(ctx context.Context, taskResult *protocol.TaskResult, manifest *protocol.TaskManifest, mapping RemoteTaskMapping) error {
+	if b.Materializer == nil {
+		return nil
+	}
+	var failures []string
+	for _, step := range taskResult.Steps {
+		if step.Index < 0 || step.Index >= len(manifest.Steps) {
+			continue
+		}
+		manifestStep := manifest.Steps[step.Index]
+		remoteStdout := step.StdoutPath
+		if remoteStdout == "" {
+			remoteStdout = filepath.Join(mapping.RuntimeDirectory, fmt.Sprintf("step-%d.stdout", step.Index))
+		}
+		remoteStderr := step.StderrPath
+		if remoteStderr == "" {
+			remoteStderr = filepath.Join(mapping.RuntimeDirectory, fmt.Sprintf("step-%d.stderr", step.Index))
+		}
+		localStdout := manifestStep.StdoutPath
+		localStderr := manifestStep.StderrPath
+		if localStdout == "" {
+			localStdout = filepath.Join(manifest.RuntimeDirectory, fmt.Sprintf("step-%d.stdout", step.Index))
+		}
+		if localStderr == "" {
+			localStderr = filepath.Join(manifest.RuntimeDirectory, fmt.Sprintf("step-%d.stderr", step.Index))
+		}
+		if err := b.Materializer.Materialize(ctx, remoteStdout, localStdout); err != nil {
+			failures = append(failures, fmt.Sprintf("stdout step %d: %v", step.Index, err))
+		}
+		if err := b.Materializer.Materialize(ctx, remoteStderr, localStderr); err != nil {
+			failures = append(failures, fmt.Sprintf("stderr step %d: %v", step.Index, err))
+		}
+		step.StdoutPath, step.StderrPath = localStdout, localStderr
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("materialize Colab logs: %s", strings.Join(failures, "; "))
+	}
+	return nil
 }
 
 func (b *Backend) CancelSubmission(context.Context, string, map[string]any) error { return nil }

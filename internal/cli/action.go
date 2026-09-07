@@ -117,7 +117,8 @@ func exactArgs(count int) cobra.PositionalArgs {
 func newActionRunCommand(buildInfo BuildInfo) *cobra.Command {
 	var dir, config, backendName, stateDir, runID, format string
 	var inputValues []string
-	var workers, maxParallel int
+	var workers, maxParallel, maxCores int
+	var maxMemory string
 	var force, dryRun bool
 	command := &cobra.Command{Use: "run NAME", Short: "Run an action", Args: exactArgs(1), RunE: func(command *cobra.Command, args []string) error {
 		overrides, err := parseActionInputs(inputValues)
@@ -171,6 +172,10 @@ func newActionRunCommand(buildInfo BuildInfo) *cobra.Command {
 		if err != nil {
 			return configurationError(err)
 		}
+		memoryBytes, err := compiler.ParseMemory(maxMemory)
+		if err != nil {
+			return usageError("invalid --max-memory value %q: %v", maxMemory, err)
+		}
 		selectedBackend := backend.Backend(local.New())
 		stateStore, err := store.Open(command.Context(), databasePath)
 		if err != nil {
@@ -180,7 +185,7 @@ func newActionRunCommand(buildInfo BuildInfo) *cobra.Command {
 		if runID == "" {
 			runID = defaultMutableRunID()
 		}
-		taskScheduler, err := scheduler.New(plan, stateStore, scheduler.Options{ProjectDirectory: projectDirectory, StateDirectory: stateDirectory, ConfigPath: options.configPath, ConfigDigest: digests.Config, WorkflowPath: options.workflowPath, WorkflowDigest: digests.Workflow, Backend: selectedBackend, MaxParallel: workers, MaxCores: 0, MaxMemoryBytes: 0, Force: force, Version: buildInfo.Version, RunID: runID, LoaderKind: string(options.configKind)})
+		taskScheduler, err := scheduler.New(plan, stateStore, scheduler.Options{ProjectDirectory: projectDirectory, StateDirectory: stateDirectory, ConfigPath: options.configPath, ConfigDigest: digests.Config, WorkflowPath: options.workflowPath, WorkflowDigest: digests.Workflow, Backend: selectedBackend, MaxParallel: workers, MaxCores: effectiveSchedulerMaxCores(backendName, maxCores, command.Flags().Changed("max-cores")), MaxMemoryBytes: memoryBytes, Force: force, Version: buildInfo.Version, RunID: runID, LoaderKind: string(options.configKind)})
 		if err != nil {
 			return backendFailureError(err)
 		}
@@ -206,6 +211,8 @@ func newActionRunCommand(buildInfo BuildInfo) *cobra.Command {
 	command.Flags().StringVar(&runID, "run-id", "", "Run identifier")
 	command.Flags().IntVar(&workers, "workers", 0, "Maximum active submissions")
 	command.Flags().IntVar(&maxParallel, "max-parallel", runtime.NumCPU(), "Maximum active submissions when workers is zero")
+	command.Flags().IntVar(&maxCores, "max-cores", 0, "Scheduler CPU admission limit")
+	command.Flags().StringVar(&maxMemory, "max-memory", "0", "Scheduler memory admission limit, 0 means unlimited")
 	command.Flags().BoolVar(&force, "force", false, "Ignore fingerprint cache")
 	command.Flags().BoolVar(&dryRun, "dry-run", false, "Compile and display without executing")
 	command.Flags().StringVar(&format, "format", "text", "Output format (text/json/jsonl)")

@@ -2,7 +2,7 @@
 
 > TDD 在本文中指 Technical Design Document；交付过程同时采用 Test-Driven Development 的 red → green → refactor 垂直切片。
 
-- 状态：Reviewed Draft（已完成代码架构与 Colab 可行性复审；存在 3 项实现前置确认）
+- 状态：Phase 1 implemented（action/local + offline Colab seams 已实现并通过聚焦测试；真实 Colab 接入仍受第 10 节前置条件约束）
 - 基线：craftmake Colab branch，现有 Go CLI / compiler / scheduler / backend / store 架构
 - 目标：审查已批准计划，修正与现有代码和 Colab 运行模型不一致的假设，形成可执行的设计与测试交付方案
 
