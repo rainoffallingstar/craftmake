@@ -7,7 +7,7 @@ on:
     modes: [REFERENCE]
 defaults:
   shell: bash
-  environment: otter-core-bismark-rust-3.1.0-r2
+  environment: otter-core
   observability:
     metrics: task
     capture_stdout: true
@@ -24,7 +24,7 @@ jobs:
     resources:
       cores: 2
       memory: 8G
-      partition: amd_512
+      partition: "${{ config.reference_build.partition }}"
       time: 3-00:00:00
     steps:
       - name: Download provider-published FASTA and GTF archives
@@ -100,7 +100,7 @@ jobs:
     resources:
       cores: 4
       memory: 32G
-      partition: amd_512
+      partition: "${{ config.reference_build.partition }}"
       time: 04:00:00
     steps:
       - name: Materialize declared reference contigs
@@ -148,7 +148,7 @@ jobs:
     resources:
       cores: 16
       memory: 192G
-      partition: amd_512
+      partition: "${{ config.reference_build.partition }}"
       time: 24:00:00
     steps:
       - name: Build Bismark Bowtie2 and STAR indexes through Otter

@@ -22,11 +22,34 @@ func TestLoadReferenceBuildCreatesDedicatedImmutableContext(t *testing.T) {
 	if context.Workflow.JobID != "reference-mm10-canary-20260729T000000Z" {
 		t.Fatalf("unexpected reference build identity: %q", context.Workflow.JobID)
 	}
-	if context.Execution.Slurm.Partition != "amd_512" {
-		t.Fatalf("unexpected Slurm partition: %#v", context.Execution.Slurm)
+	if context.Execution.Slurm.Partition != "" {
+		t.Fatalf("unexpected default Slurm partition: %#v", context.Execution.Slurm)
 	}
 	if got := context.Raw["reference_build"].(map[string]any)["reference_id"]; got != "mm10-canary" {
 		t.Fatalf("unexpected reference identity: %q", got)
+	}
+}
+
+func TestLoadReferenceBuildUsesConfiguredBackendAndPartition(t *testing.T) {
+	configurationData, err := os.ReadFile(repositoryPath(t, "testdata", "configs", "reference-build.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuredData := strings.Replace(string(configurationData), "  run_id: reference-mm10-canary-20260729T000000Z\n", "  run_id: reference-mm10-canary-20260729T000000Z\n  backend: local\n  partition: local-test\n", 1)
+	configurationPath := filepath.Join(t.TempDir(), "reference-build.yaml")
+	if err := os.WriteFile(configurationPath, []byte(configuredData), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	context, err := LoadReferenceBuild(configurationPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context.Workflow.Backend != "local" {
+		t.Fatalf("configured reference build backend was not preserved: %q", context.Workflow.Backend)
+	}
+	if context.Execution.Slurm.Partition != "local-test" {
+		t.Fatalf("configured reference build partition was not preserved: %q", context.Execution.Slurm.Partition)
 	}
 }
 
@@ -67,7 +90,7 @@ func TestLoadReferenceBuildRejectsRelativeToolPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	invalidConfiguration := strings.Replace(string(configurationData), "otter_binary: /gate6/bin/otter", "otter_binary: otter", 1)
+	invalidConfiguration := strings.Replace(string(configurationData), "otter_binary: /usr/local/bin/otter", "otter_binary: otter", 1)
 	configurationPath := filepath.Join(t.TempDir(), "reference-build.yaml")
 	if err := os.WriteFile(configurationPath, []byte(invalidConfiguration), 0o644); err != nil {
 		t.Fatal(err)

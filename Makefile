@@ -25,7 +25,9 @@ install: build
 	install -m 0755 "$(BINARY)" "$(DESTDIR)$(BINDIR)/craftmake"
 	install -d "$(DESTDIR)$(DATADIR)/workflows"
 	cp -R workflows/. "$(DESTDIR)$(DATADIR)/workflows/"
-	chmod -R a+rX "$(DESTDIR)$(DATADIR)/workflows"
+	install -d "$(DESTDIR)$(DATADIR)/configs"
+	cp -R configs/. "$(DESTDIR)$(DATADIR)/configs/"
+	chmod -R a+rX "$(DESTDIR)$(DATADIR)/workflows" "$(DESTDIR)$(DATADIR)/configs"
 
 uninstall:
 	rm -f "$(DESTDIR)$(BINDIR)/craftmake"
@@ -42,8 +44,10 @@ release:
 release-archive:
 	mkdir -p "$(DIST_DIR)/craftmake_$(VERSION)_$(RELEASE_GOOS)_$(RELEASE_GOARCH)/bin"
 	mkdir -p "$(DIST_DIR)/craftmake_$(VERSION)_$(RELEASE_GOOS)_$(RELEASE_GOARCH)/share/craftmake/workflows"
+	mkdir -p "$(DIST_DIR)/craftmake_$(VERSION)_$(RELEASE_GOOS)_$(RELEASE_GOARCH)/share/craftmake/configs"
 	CGO_ENABLED=0 GOOS="$(RELEASE_GOOS)" GOARCH="$(RELEASE_GOARCH)" $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o "$(DIST_DIR)/craftmake_$(VERSION)_$(RELEASE_GOOS)_$(RELEASE_GOARCH)/bin/craftmake" ./cmd/craftmake
 	cp -R workflows/. "$(DIST_DIR)/craftmake_$(VERSION)_$(RELEASE_GOOS)_$(RELEASE_GOARCH)/share/craftmake/workflows/"
+	cp -R configs/. "$(DIST_DIR)/craftmake_$(VERSION)_$(RELEASE_GOOS)_$(RELEASE_GOARCH)/share/craftmake/configs/"
 	chmod -R a+rX "$(DIST_DIR)/craftmake_$(VERSION)_$(RELEASE_GOOS)_$(RELEASE_GOARCH)"
 	tar -C "$(DIST_DIR)" -czf "$(DIST_DIR)/craftmake_$(VERSION)_$(RELEASE_GOOS)_$(RELEASE_GOARCH).tar.gz" "craftmake_$(VERSION)_$(RELEASE_GOOS)_$(RELEASE_GOARCH)"
 	rm -rf "$(DIST_DIR)/craftmake_$(VERSION)_$(RELEASE_GOOS)_$(RELEASE_GOARCH)"

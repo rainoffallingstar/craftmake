@@ -53,10 +53,14 @@ type commonOptions struct {
 	standaloneAssertion  bool
 	legacyConfig         bool
 	referenceBuildConfig bool
+	gateMode             bool
 }
 
 func (options commonOptions) permitsMutableOverrides() bool {
-	return options.configKind == standalone.ConfigKindLegacy || options.configKind == standalone.ConfigKindStandalone
+	if options.gateMode {
+		return options.configKind == standalone.ConfigKindLegacy || options.configKind == standalone.ConfigKindStandalone
+	}
+	return true
 }
 
 func executionRunID(resolvedRunID string, phase string, permitsMutableOverrides bool) string {
@@ -316,6 +320,7 @@ func newRunCommand(buildInfo BuildInfo) *cobra.Command {
 	command.Flags().DurationVar(&slurmPendingTimeout, "slurm-pending-timeout", 0, "Cancel a Slurm job after this continuous pending duration, 0 disables")
 	command.Flags().BoolVar(&force, "force", false, "Ignore fingerprint cache")
 	command.Flags().BoolVar(&dryRun, "dry-run", false, "Compile and display the plan without executing")
+	command.Flags().BoolVar(&options.gateMode, "gate", false, "Enforce immutable backend, run identity, and Slurm resources")
 	command.Flags().StringVar(&runID, "run-id", "", "Override the resolved run identifier")
 	command.Flags().StringVar(&options.format, "format", "text", "Output format (text/json/jsonl)")
 	return command
@@ -920,6 +925,7 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 	var slurmPendingTimeout time.Duration
 	var format string
 	var legacyConfig bool
+	var gateMode bool
 	command := &cobra.Command{Use: "resume", Short: "Recover and resume a prior run using its workflow, config, and backend", RunE: func(command *cobra.Command, arguments []string) error {
 		stateStore, err := store.Open(command.Context(), statePath)
 		if err != nil {
@@ -947,6 +953,7 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 			projectDir:   projectDirectory,
 			stateDir:     filepath.Dir(statePath),
 			legacyConfig: legacyConfig,
+			gateMode:     gateMode,
 		}
 		plan, planErr := loadPlan(&options)
 		if planErr != nil {
@@ -1091,6 +1098,7 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 	command.Flags().DurationVar(&slurmSubmitMaximumBackoff, "slurm-submit-max-backoff", 30*time.Second, "Maximum delay between transient sbatch retries")
 	command.Flags().DurationVar(&slurmPendingTimeout, "slurm-pending-timeout", 0, "Cancel a Slurm job after this continuous pending duration, 0 disables")
 	command.Flags().StringVar(&format, "format", "text", "Output format (text/json/jsonl)")
+	command.Flags().BoolVar(&gateMode, "gate", false, "Enforce immutable backend and Slurm resources")
 	command.Flags().BoolVar(&legacyConfig, "legacy-config", false, "Load the stored configuration through the legacy compatibility adapter")
 	_ = command.Flags().MarkHidden("legacy-config")
 	return command

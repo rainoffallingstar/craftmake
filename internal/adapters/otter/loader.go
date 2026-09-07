@@ -177,6 +177,15 @@ func loadReferenceBuild(path, baseDirectory string, raw map[string]any) (*compil
 		return nil, fmt.Errorf("reference build configuration requires positive reference_build.index_build_threads")
 	}
 
+	referenceBuildBackend := firstString(raw, "reference_build.backend")
+	if referenceBuildBackend == "" {
+		referenceBuildBackend = "slurm"
+	}
+	if referenceBuildBackend != "local" && referenceBuildBackend != "slurm" {
+		return nil, fmt.Errorf("reference build configuration has unsupported reference_build.backend %q; supported values are local and slurm", referenceBuildBackend)
+	}
+	referenceBuildPartition := firstString(raw, "reference_build.partition")
+
 	for _, pathField := range []string{
 		"reference_build.cache_dir",
 		"reference_build.work_dir",
@@ -205,11 +214,11 @@ func loadReferenceBuild(path, baseDirectory string, raw map[string]any) (*compil
 			JobID:        firstString(raw, "reference_build.run_id"),
 			UserID:       "reference-builder",
 			Executor:     "craftmake",
-			Backend:      "slurm",
+			Backend:      referenceBuildBackend,
 			Toolchain:    "reference-builder",
 		},
 		Execution: compiler.ExecutionContext{
-			Slurm: compiler.SlurmExecutionContext{Partition: "amd_512", DefaultTime: "1-00:00:00"},
+			Slurm: compiler.SlurmExecutionContext{Partition: referenceBuildPartition, DefaultTime: "1-00:00:00"},
 		},
 		Paths: map[string]string{
 			"config":  absoluteConfigPath,

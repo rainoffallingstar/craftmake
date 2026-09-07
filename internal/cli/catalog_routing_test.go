@@ -189,7 +189,7 @@ func TestEffectiveSchedulerMaxCoresSeparatesLocalAndSlurmDefaults(t *testing.T) 
 	}
 }
 
-func TestResolveSlurmExecutionOptionsUsesImmutableSnapshot(t *testing.T) {
+func TestResolveSlurmExecutionOptionsHonorsGateMode(t *testing.T) {
 	command := &cobra.Command{}
 	command.Flags().String("partition", "", "")
 	command.Flags().String("account", "", "")
