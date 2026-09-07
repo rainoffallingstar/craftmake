@@ -23,6 +23,7 @@ import (
 	"github.com/fallingstar10/craftmake/internal/backend/slurm"
 	"github.com/fallingstar10/craftmake/internal/compiler"
 	"github.com/fallingstar10/craftmake/internal/controllerlog"
+	"github.com/fallingstar10/craftmake/internal/engine"
 	"github.com/fallingstar10/craftmake/internal/report"
 	runtimeexecutor "github.com/fallingstar10/craftmake/internal/runtime"
 	"github.com/fallingstar10/craftmake/internal/scheduler"
@@ -264,21 +265,19 @@ func newRunCommand(buildInfo BuildInfo) *cobra.Command {
 		if err != nil {
 			return usageError("invalid --max-memory value %q: %v", maxMemory, err)
 		}
-		stateStore, err := store.Open(command.Context(), databasePath)
-		if err != nil {
-			return stateFailureError(err)
-		}
-		defer stateStore.Close()
 		digests, err := calculatePlanDigests(options.configPath, options.workflowPath)
 		if err != nil {
 			return configurationError(err)
 		}
-		taskScheduler, err := scheduler.New(plan, stateStore, scheduler.Options{ProjectDirectory: projectDirectory, StateDirectory: stateDirectory, ConfigPath: options.configPath, ConfigDigest: digests.Config, WorkflowPath: options.workflowPath, WorkflowDigest: digests.Workflow, Backend: selectedBackend, MaxParallel: effectiveWorkers, MaxCores: effectiveMaxCores, MaxMemoryBytes: memoryBytes, Force: force, Version: buildInfo.Version, RunID: runID, LoaderKind: string(options.configKind)})
-		if err != nil {
-			return backendFailureError(err)
+		if runID == "" {
+			runID = defaultMutableRunID()
 		}
-		actualRunID, runErr := taskScheduler.Run(command.Context())
-		for _, logErr := range taskScheduler.ControllerLogErrors() {
+		runResult, runErr := engine.Run(command.Context(), engine.RunRequest{Plan: plan, DatabasePath: databasePath, ProjectDirectory: projectDirectory, StateDirectory: stateDirectory, ConfigPath: options.configPath, ConfigDigest: digests.Config, WorkflowPath: options.workflowPath, WorkflowDigest: digests.Workflow, Backend: selectedBackend, MaxParallel: effectiveWorkers, MaxCores: effectiveMaxCores, MaxMemoryBytes: memoryBytes, Force: force, Version: buildInfo.Version, RunID: runID, LoaderKind: string(options.configKind)})
+		if runResult.RunID == "" && runErr != nil {
+			return backendFailureError(runErr)
+		}
+		actualRunID := runResult.RunID
+		for _, logErr := range runResult.ControllerLogErrors {
 			fmt.Fprintf(command.ErrOrStderr(), "warning: controller log: %v\n", logErr)
 		}
 		status := "succeeded"
@@ -289,14 +288,14 @@ func newRunCommand(buildInfo BuildInfo) *cobra.Command {
 		if marshalErr != nil {
 			return internalFailureError(marshalErr)
 		}
-		envelope := protocol.NewCommandEnvelope("run", runErr == nil, actualRunID, databasePath, taskScheduler.ControllerLogPath(), payload)
+		envelope := protocol.NewCommandEnvelope("run", runErr == nil, actualRunID, databasePath, runResult.ControllerLogPath, payload)
 		if outputErr := writeCommandOutput(command, options.format, envelope, func() error {
 			fmt.Fprintf(
 				command.OutOrStdout(),
 				"run_id: %s\nstate: %s\ncontroller_log: %s\n",
 				actualRunID,
 				databasePath,
-				taskScheduler.ControllerLogPath(),
+				runResult.ControllerLogPath,
 			)
 			return nil
 		}); outputErr != nil {
