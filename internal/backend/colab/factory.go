@@ -13,6 +13,12 @@ type FactoryDependencies struct {
 	MountPreflight DriveMountPreflight
 	Materializer   LogMaterializer
 	Workspace      WorkspaceSyncer
+	ResultReader   RemoteResultReader
+	// Server wires the reference-informed control-plane and proxy execution
+	// into the backend when explicit Control/Executor are not supplied.
+	Server      *ColabServerClient
+	RuntimeSpec RuntimeSpec
+	ProxyToken  string
 }
 
 func NewFactory(dependencies FactoryDependencies) backendpkg.Factory {
@@ -28,10 +34,20 @@ func NewFactory(dependencies FactoryDependencies) backendpkg.Factory {
 			}
 			config.DriveRoot, config.MountPath = authConfig.DriveRoot, authConfig.MountPath
 		}
-		if dependencies.Control == nil || dependencies.Executor == nil {
+		control := dependencies.Control
+		executor := dependencies.Executor
+		if dependencies.Server != nil {
+			if control == nil {
+				control = &ServerControlPlane{Client: dependencies.Server, Spec: dependencies.RuntimeSpec}
+			}
+			if executor == nil {
+				executor = &ProxyNotebookExecutor{BearerToken: dependencies.ProxyToken}
+			}
+		}
+		if control == nil || executor == nil {
 			return nil, fmt.Errorf("Colab factory requires control plane and notebook executor")
 		}
 		_ = ctx
-		return &Backend{Config: config, Control: dependencies.Control, Executor: dependencies.Executor, MountPreflight: dependencies.MountPreflight, Materializer: dependencies.Materializer, Workspace: dependencies.Workspace}, nil
+		return &Backend{Config: config, Control: control, Executor: executor, MountPreflight: dependencies.MountPreflight, Materializer: dependencies.Materializer, Workspace: dependencies.Workspace, ResultReader: dependencies.ResultReader}, nil
 	}
 }
