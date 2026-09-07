@@ -42,7 +42,10 @@ Install to a prefix:
 sudo make install PREFIX="/usr/local"
 ```
 
-## Minimal commands
+## Controller contract
+
+The Craftmake controller is the supported control plane for every canonical run. It validates the immutable `run.yaml`, compiles the selected catalog phase, schedules tasks, persists SQLite state and `controller.jsonl`, reconciles SLURM accounting, handles resume/cancel, and publishes validated artifacts. Direct hand-written `sbatch` orchestration is not a substitute for controller execution.
+
 
 ```bash
 craftmake doctor --backend local
@@ -70,7 +73,54 @@ craftmake report --state-dir /analysis/runs/<run-id>/state
 craftmake cancel --state-dir /analysis/runs/<run-id>/state
 ```
 
-The exact workflow phase, backend, resource envelope, and reference identity for an `otter.run/v1` snapshot are resolved before execution. Do not override them ad hoc at runtime.
+The exact workflow phase, backend, resource envelope, and reference identity for an `otter.run/v1` snapshot are resolved before execution. By default, mutable overrides (`--backend`, `--run-id`, `--partition`, `--account`, `--qos`, `--time`, `--scratch-root`) are allowed. Pass `--gate` to `run` or `resume` to enforce the immutable layer: backend, run identity, and SLURM resources are then fixed to the resolved snapshot and cannot be overridden.
+
+```bash
+# Mutable overrides are allowed by default.
+craftmake run \
+  --config /analysis/runs/run-20260905T010203Z-abcdef/run.yaml \
+  --phase step1 \
+  --backend local \
+  --partition compute
+
+# --gate enforces the immutable snapshot (backend, run id, SLURM resources).
+craftmake run \
+  --config /analysis/runs/run-20260905T010203Z-abcdef/run.yaml \
+  --phase step1 \
+  --gate
+```
+
+## ReferenceBuild
+
+Craftmake can download, build, and publish an immutable reference genome release through the `ReferenceBuild` workflow. It reads a `reference-build.yaml` configuration and runs the `acquire_sources → prepare_assets → publish_release` DAG, which calls `otter reference build` to publish the standard registry directory.
+
+```bash
+craftmake plan \
+  --reference-build-config \
+  --config reference-build.yaml \
+  --workflow workflows/ReferenceBuild/build.yaml \
+  --phase build \
+  --catalog workflows/
+
+craftmake run \
+  --reference-build-config \
+  --config reference-build.yaml \
+  --workflow workflows/ReferenceBuild/build.yaml \
+  --phase build \
+  --catalog workflows/ \
+  --gate
+```
+
+The reference-build backend and partition are configurable in `reference-build.yaml`:
+
+```yaml
+reference_build:
+  backend: local        # or slurm; default slurm
+  partition: ""        # empty uses the site profile / --partition / CRAFTMAKE_SLURM_PARTITION
+  # ... fasta/gtf URLs, checksums, registry_root, tool binaries ...
+```
+
+A default `reference-build.yaml` template ships in the release archive under `share/craftmake/configs/`. The `--gate` flag keeps the reference-build run immutable; without it, SLURM resources may be overridden.
 
 ## Workflow assets
 
