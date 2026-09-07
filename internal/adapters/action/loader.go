@@ -38,6 +38,10 @@ type Loaded struct {
 }
 
 func Load(path string, overrides map[string]string, projectDir, stateDir string) (*Loaded, error) {
+	return LoadWithSources(path, overrides, currentEnvironment(), projectDir, stateDir)
+}
+
+func LoadWithSources(path string, overrides, environment map[string]string, projectDir, stateDir string) (*Loaded, error) {
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("resolve action path: %w", err)
@@ -67,11 +71,15 @@ func Load(path string, overrides map[string]string, projectDir, stateDir string)
 	if err != nil {
 		return nil, err
 	}
-	env, err := renderMap(action.Env, map[string]any{"inputs": stringMapAny(values)})
+	env, err := renderMap(action.Env, parameterValues(values, environment))
 	if err != nil {
 		return nil, fmt.Errorf("action env: %w", err)
 	}
-	workflow, err := normalizeWorkflow(action, values, env)
+	effectiveEnvironment := cloneMap(environment)
+	for key, value := range env {
+		effectiveEnvironment[key] = value
+	}
+	workflow, err := normalizeWorkflow(action, values, env, effectiveEnvironment)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +99,7 @@ func Load(path string, overrides map[string]string, projectDir, stateDir string)
 	if backendName == "" {
 		backendName = "local"
 	}
-	context := &compiler.Context{Raw: map[string]any{"action": action.Name, "inputs": stringMapAny(values), "env": stringMapAny(env)}, Workflow: compiler.WorkflowContext{Mode: "STANDALONE", WorkflowName: action.Name, Executor: "craftmake", Backend: backendName}, Paths: map[string]string{"config": absolutePath, "project": projectDir, "state": stateDir, "work": filepath.Join(projectDir, "work"), "results": filepath.Join(projectDir, "results"), "logs": filepath.Join(projectDir, "logs")}}
+	context := &compiler.Context{Raw: map[string]any{"action": action.Name, "args": stringMapAny(values), "inputs": stringMapAny(values), "env": stringMapAny(effectiveEnvironment)}, Workflow: compiler.WorkflowContext{Mode: "STANDALONE", WorkflowName: action.Name, Executor: "craftmake", Backend: backendName}, Paths: map[string]string{"config": absolutePath, "project": projectDir, "state": stateDir, "work": filepath.Join(projectDir, "work"), "results": filepath.Join(projectDir, "results"), "logs": filepath.Join(projectDir, "logs")}}
 	return &Loaded{Action: action, Workflow: workflow, Context: context}, nil
 }
 
@@ -153,8 +161,8 @@ func resolveInputs(declarations map[string]InputSpec, overrides map[string]strin
 	return result, nil
 }
 
-func normalizeWorkflow(action ActionSpec, inputs, env map[string]string) (*spec.WorkflowSpec, error) {
-	values := map[string]any{"inputs": stringMapAny(inputs), "env": stringMapAny(env)}
+func normalizeWorkflow(action ActionSpec, inputs, env, environment map[string]string) (*spec.WorkflowSpec, error) {
+	values := parameterValues(inputs, environment)
 	workflow := &spec.WorkflowSpec{Name: action.Name, Version: spec.CurrentVersion, On: spec.TriggerSpec{Otter: spec.OtterTrigger{Workflow: action.Name, Phase: "main", Modes: []string{"STANDALONE"}}}, Defaults: spec.DefaultsSpec{Env: cloneMap(env)}, Jobs: map[string]spec.JobSpec{}}
 	for jobID, original := range action.Jobs {
 		job := original
@@ -204,6 +212,23 @@ func renderMap(values map[string]string, context map[string]any) (map[string]str
 		result[key] = rendered
 	}
 	return result, nil
+}
+
+func parameterValues(args, environment map[string]string) map[string]any {
+	argValues := stringMapAny(args)
+	envValues := stringMapAny(environment)
+	return map[string]any{"args": argValues, "inputs": argValues, "env": envValues}
+}
+
+func currentEnvironment() map[string]string {
+	result := map[string]string{}
+	for _, item := range os.Environ() {
+		key, value, ok := strings.Cut(item, "=")
+		if ok {
+			result[key] = value
+		}
+	}
+	return result
 }
 
 func stringMapAny(values map[string]string) map[string]any {

@@ -182,7 +182,7 @@ func (taskScheduler *Scheduler) Run(ctx context.Context) (string, error) {
 			if persistedStatus, statusErr := taskScheduler.store.RunStatus(cleanupContext, runID); statusErr == nil && persistedStatus != "" {
 				status = persistedStatus
 			}
-			_ = lifecycle.EndRun(cleanupContext, backend.RunOutcome{RunID: runID, Status: status})
+			_ = lifecycle.EndRun(cleanupContext, backend.RunOutcome{RunID: runID, Status: status, ProjectDirectory: taskScheduler.options.ProjectDirectory, StateDirectory: taskScheduler.options.StateDirectory})
 		}()
 	}
 	taskScheduler.controllerLogger.Log(ctx, controllerlog.Event{

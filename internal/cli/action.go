@@ -61,9 +61,10 @@ func newActionListCommand() *cobra.Command {
 
 func newActionPlanCommand() *cobra.Command {
 	var dir, config string
-	var inputValues []string
+	var inputValues, argValues []string
 	command := &cobra.Command{Use: "plan NAME", Short: "Compile an action plan", Args: exactArgs(1), RunE: func(command *cobra.Command, args []string) error {
-		overrides, err := parseActionInputs(inputValues)
+		overrideValues := append(append([]string{}, inputValues...), argValues...)
+		overrides, err := parseActionInputs(overrideValues)
 		if err != nil {
 			return usageError("%s", err.Error())
 		}
@@ -85,7 +86,8 @@ func newActionPlanCommand() *cobra.Command {
 	}}
 	command.Flags().StringVar(&dir, "dir", ".", "Project directory")
 	command.Flags().StringVar(&config, "config", "", "Existing workflow configuration")
-	command.Flags().StringArrayVar(&inputValues, "input", nil, "Action input KEY=VALUE")
+	command.Flags().StringArrayVar(&inputValues, "input", nil, "Deprecated alias for --arg KEY=VALUE")
+	command.Flags().StringArrayVar(&argValues, "arg", nil, "Canonical command-line action argument KEY=VALUE")
 	return command
 }
 
@@ -115,12 +117,13 @@ func exactArgs(count int) cobra.PositionalArgs {
 
 func newActionRunCommand(buildInfo BuildInfo) *cobra.Command {
 	var dir, config, backendName, stateDir, runID, format string
-	var inputValues []string
+	var inputValues, argValues []string
 	var workers, maxParallel, maxCores int
 	var maxMemory string
 	var force, dryRun bool
 	command := &cobra.Command{Use: "run NAME", Short: "Run an action", Args: exactArgs(1), RunE: func(command *cobra.Command, args []string) error {
-		overrides, err := parseActionInputs(inputValues)
+		overrideValues := append(append([]string{}, inputValues...), argValues...)
+		overrides, err := parseActionInputs(overrideValues)
 		if err != nil {
 			return usageError("%s", err.Error())
 		}
@@ -199,7 +202,8 @@ func newActionRunCommand(buildInfo BuildInfo) *cobra.Command {
 	}}
 	command.Flags().StringVar(&dir, "dir", ".", "Project directory")
 	command.Flags().StringVar(&config, "config", "", "Existing workflow configuration")
-	command.Flags().StringArrayVar(&inputValues, "input", nil, "Action input KEY=VALUE")
+	command.Flags().StringArrayVar(&inputValues, "input", nil, "Deprecated alias for --arg KEY=VALUE")
+	command.Flags().StringArrayVar(&argValues, "arg", nil, "Canonical command-line action argument KEY=VALUE")
 	command.Flags().StringVar(&backendName, "backend", "", "Override the action backend")
 	command.Flags().StringVar(&stateDir, "state-dir", "", "Craftmake state directory")
 	command.Flags().StringVar(&runID, "run-id", "", "Run identifier")

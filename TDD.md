@@ -57,6 +57,26 @@
 
 `--state-dir` 仍可覆盖默认状态目录；既有 `workflow/.craftmake` 项目在兼容模式下保持可读，但新 action 默认使用 `.craftmake/state`，并生成/提示 `.craftmake/.gitignore`。持久化 run 记录必须同时保存 `LoaderKind`、`WorkflowPath`、可选 `ConfigPath`、source digest 和 backend name。
 
+## 2.4 参数来源契约
+
+所有可渲染字段统一使用带来源前缀的表达式；来源不得隐式混用：
+
+- `${{ args.NAME }}`：命令行显式传入的参数。action/v1 中通过 `--arg NAME=VALUE` 传入；现有 `--input` 保留为兼容别名。参数必须在 action 的 `inputs` 声明中存在，默认值和 required 校验仍由 action loader 负责。
+- `${{ env.NAME }}`：进程启动时采集的只读环境快照；action 顶层 `env` 经过渲染后合并进该命名空间，供后续 job/step 使用。环境变量不通过命令行参数覆盖。
+- `${{ config.NAME }}`：既有 config-driven loader/compiler 的配置上下文，保持现状；不把 `args` 或 `env` 静默写入 config。配置文件路径、digest 和原始配置仍由既有流程管理。
+- `${{ inputs.NAME }}`：`args` 的兼容别名，仅为已有 action/v1 文件提供迁移期兼容；新文件应使用 `args`。
+
+优先级只发生在同一来源内部：命令行 args 覆盖该参数的 default，action env 覆盖同名进程环境变量；`config` 不参与跨来源覆盖。认证 token 不得进入表达式快照、notebook、controller log 或 TaskResult。
+
+## 2.5 Colab workspace 与 session auth 契约
+
+- 本地项目目录是 source root；Colab/Drive 上的 durable root 是 remote root；runtime `/content` 仅作 scratch。
+- run 开始时执行一次 `local → remote` 同步，默认排除 `.craftmake/state` 和 `.git`；run 结束时执行一次 `remote → local` 同步，用于取回输出和诊断日志。
+- 同步通过 `WorkspaceSyncer` seam 实现；当前 `FileWorkspaceSyncer` 仅用于离线测试，真实实现可替换为 Drive API/FUSE 或受控传输器。
+- `~/.config/craftmake/colab-auth.json` 使用 `craftmake.colab-auth/v1`，按 `session_id` 保存 Colab credential reference、Drive credential reference、`drive_root` 与 `mount_path`，文件权限必须为 `0600`。
+- `craftmake colab auth configure` 只写 credential references，不把 token 写入配置；`craftmake colab drive mount --session NAME` 校验指定 session 并生成 mount plan。真正的 runtime mount 由 Colab backend 在 `BeginRun` 自动读取该 session 配置并调用 `DriveMountPreflight`。
+- Control-plane credential、Drive API credential、runtime mount authorization 是独立能力；没有真实 adapter 时 CLI 与 fake tests 不宣称已经完成线上挂载。
+
 ## 3. 统一架构
 
 ```text

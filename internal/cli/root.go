@@ -88,7 +88,7 @@ func NewRootCommand(buildInfo BuildInfo) *cobra.Command {
 		SilenceErrors: true,
 		Version:       fmt.Sprintf("%s+%s (%s)", buildInfo.Version, buildInfo.Commit, buildInfo.Date),
 	}
-	commands := []*cobra.Command{newValidateCommand(), newPlanCommand(), newRunCommand(buildInfo), newActionCommand(buildInfo), newStatusCommand(), newCancelCommand(), newReportCommand(), newLogsCommand(), newDoctorCommand(), newResumeCommand(buildInfo), newTaskRunnerCommand()}
+	commands := []*cobra.Command{newValidateCommand(), newPlanCommand(), newRunCommand(buildInfo), newActionCommand(buildInfo), newColabCommand(), newStatusCommand(), newCancelCommand(), newReportCommand(), newLogsCommand(), newDoctorCommand(), newResumeCommand(buildInfo), newTaskRunnerCommand()}
 	for _, command := range commands {
 		if command.Args == nil {
 			command.Args = noArguments

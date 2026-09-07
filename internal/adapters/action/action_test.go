@@ -39,6 +39,31 @@ func TestLoadNormalizesSelfContainedAction(t *testing.T) {
 	}
 }
 
+func TestLoadWithSourcesUsesCanonicalArgsAndEnvNamespaces(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "action.yaml")
+	content := []byte("schema_version: craftmake.action/v1\nname: contract\ninputs:\n  target: {}\nenv:\n  TAG: ${{ env.BUILD_ID }}\njobs:\n  job:\n    steps:\n      - run: echo ${{ args.target }}\n        env:\n          TAG: ${{ env.TAG }}\n")
+	if err := os.WriteFile(source, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadWithSources(source, map[string]string{"target": "hg38"}, map[string]string{"BUILD_ID": "ci-7"}, root, filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Workflow.Jobs["job"].Steps[0].Run != "echo hg38" {
+		t.Fatalf("unexpected args rendering: %#v", loaded.Workflow.Jobs["job"].Steps[0])
+	}
+	if loaded.Workflow.Jobs["job"].Steps[0].Env["TAG"] != "ci-7" {
+		t.Fatalf("unexpected action env rendering: %#v", loaded.Workflow.Jobs["job"].Steps[0].Env)
+	}
+	if loaded.Context.Raw["env"].(map[string]any)["BUILD_ID"] != "ci-7" {
+		t.Fatalf("missing env namespace: %#v", loaded.Context.Raw)
+	}
+	if loaded.Context.Raw["args"].(map[string]any)["target"] != "hg38" {
+		t.Fatalf("missing args namespace: %#v", loaded.Context.Raw)
+	}
+}
+
 func TestLoadRejectsMissingRequiredInput(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "action.yaml")

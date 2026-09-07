@@ -25,7 +25,13 @@ type NotebookExecutor interface {
 	ExecuteNotebook(context.Context, Runtime, []byte) (string, error)
 }
 
-type DriveMountRequest struct{ RunID, MountPath, DriveRoot string }
+type DriveMountRequest struct {
+	RunID          string
+	SessionID      string
+	AuthConfigPath string
+	MountPath      string
+	DriveRoot      string
+}
 type DriveMountPreflight interface {
 	CheckMount(context.Context, DriveMountRequest) error
 }
@@ -34,10 +40,14 @@ type LogMaterializer interface {
 }
 
 type Config struct {
-	RemoteRoot  string
-	ScratchRoot string
-	DriveRoot   string
-	MountPath   string
+	RemoteRoot     string
+	ScratchRoot    string
+	DriveRoot      string
+	MountPath      string
+	AuthConfigPath string
+	SessionID      string
+	LocalRoot      string
+	SyncExcludes   []string
 }
 
 type Backend struct {
@@ -46,6 +56,7 @@ type Backend struct {
 	Executor       NotebookExecutor
 	MountPreflight DriveMountPreflight
 	Materializer   LogMaterializer
+	Workspace      WorkspaceSyncer
 	mutex          sync.Mutex
 	runtime        Runtime
 	active         bool
@@ -57,28 +68,69 @@ func (b *Backend) BeginRun(ctx context.Context, run backend.RunContext) error {
 	if b.Control == nil || b.Executor == nil {
 		return fmt.Errorf("colab control plane and notebook executor are required")
 	}
-	if b.Config.DriveRoot != "" {
-		if b.MountPreflight == nil {
-			return fmt.Errorf("drive mount preflight is required when drive root is configured")
+	config := b.Config
+	if config.LocalRoot == "" {
+		config.LocalRoot = run.ProjectDirectory
+	}
+	if config.AuthConfigPath != "" {
+		auth, err := LoadSessionAuth(config.AuthConfigPath, config.SessionID)
+		if err != nil {
+			return fmt.Errorf("load Colab session auth: %w", err)
 		}
-		mountPath := b.Config.MountPath
-		if mountPath == "" {
-			mountPath = "/content/drive"
+		if config.DriveRoot == "" {
+			config.DriveRoot = auth.DriveRoot
 		}
-		if err := b.MountPreflight.CheckMount(ctx, DriveMountRequest{RunID: run.RunID, MountPath: mountPath, DriveRoot: b.Config.DriveRoot}); err != nil {
-			return fmt.Errorf("drive mount preflight: %w", err)
+		if config.MountPath == "" {
+			config.MountPath = auth.MountPath
 		}
 	}
 	b.mutex.Lock()
-	defer b.mutex.Unlock()
 	if b.active {
+		b.mutex.Unlock()
 		return fmt.Errorf("colab runtime is already active")
 	}
 	runtime, err := b.Control.AcquireRuntime(ctx, RuntimeRequest{RunID: run.RunID})
 	if err != nil {
+		b.mutex.Unlock()
 		return fmt.Errorf("acquire Colab runtime: %w", err)
 	}
 	b.runtime, b.active = runtime, true
+	b.mutex.Unlock()
+	rollback := func(beginErr error) error {
+		b.mutex.Lock()
+		b.active = false
+		b.runtime = Runtime{}
+		b.mutex.Unlock()
+		if releaseErr := b.Control.ReleaseRuntime(ctx, runtime); releaseErr != nil {
+			return fmt.Errorf("%w; release Colab runtime after failed begin: %v", beginErr, releaseErr)
+		}
+		return beginErr
+	}
+	if config.DriveRoot != "" {
+		if b.MountPreflight == nil {
+			return rollback(fmt.Errorf("drive mount preflight is required when drive root is configured"))
+		}
+		mountPath := config.MountPath
+		if mountPath == "" {
+			mountPath = "/content/drive"
+		}
+		if err := b.MountPreflight.CheckMount(ctx, DriveMountRequest{RunID: run.RunID, SessionID: config.SessionID, AuthConfigPath: config.AuthConfigPath, MountPath: mountPath, DriveRoot: config.DriveRoot}); err != nil {
+			return rollback(fmt.Errorf("drive mount preflight: %w", err))
+		}
+	}
+	if b.Workspace != nil && config.LocalRoot != "" {
+		target := config.DriveRoot
+		if target == "" {
+			target = b.remoteRoot()
+		}
+		excludes := config.SyncExcludes
+		if len(excludes) == 0 {
+			excludes = []string{".craftmake/state", ".git"}
+		}
+		if err := b.Workspace.Sync(ctx, WorkspaceSyncRequest{RunID: run.RunID, LocalRoot: config.LocalRoot, RemoteRoot: target, Direction: "in", Excludes: excludes}); err != nil {
+			return rollback(fmt.Errorf("sync workspace to Colab: %w", err))
+		}
+	}
 	return nil
 }
 
@@ -92,8 +144,40 @@ func (b *Backend) EndRun(ctx context.Context, outcome backend.RunOutcome) error 
 	b.active = false
 	b.runtime = Runtime{}
 	b.mutex.Unlock()
-	if err := b.Control.ReleaseRuntime(ctx, runtime); err != nil {
-		return fmt.Errorf("release Colab runtime after %s: %w", outcome.Status, err)
+	var syncErr error
+	config := b.Config
+	if config.AuthConfigPath != "" {
+		if auth, err := LoadSessionAuth(config.AuthConfigPath, config.SessionID); err != nil {
+			syncErr = fmt.Errorf("load Colab session auth for sync-out: %w", err)
+		} else {
+			if config.DriveRoot == "" {
+				config.DriveRoot = auth.DriveRoot
+			}
+			if config.MountPath == "" {
+				config.MountPath = auth.MountPath
+			}
+		}
+	}
+	if syncErr == nil && b.Workspace != nil && outcome.ProjectDirectory != "" {
+		target := config.DriveRoot
+		if target == "" {
+			target = b.remoteRoot()
+		}
+		excludes := config.SyncExcludes
+		if len(excludes) == 0 {
+			excludes = []string{".craftmake/state", ".git"}
+		}
+		syncErr = b.Workspace.Sync(ctx, WorkspaceSyncRequest{RunID: outcome.RunID, LocalRoot: target, RemoteRoot: outcome.ProjectDirectory, Direction: "out", Excludes: excludes})
+	}
+	releaseErr := b.Control.ReleaseRuntime(ctx, runtime)
+	if syncErr != nil && releaseErr != nil {
+		return fmt.Errorf("sync workspace from Colab: %v; release Colab runtime after %s: %w", syncErr, outcome.Status, releaseErr)
+	}
+	if syncErr != nil {
+		return fmt.Errorf("sync workspace from Colab: %w", syncErr)
+	}
+	if releaseErr != nil {
+		return fmt.Errorf("release Colab runtime after %s: %w", outcome.Status, releaseErr)
 	}
 	return nil
 }
@@ -187,6 +271,9 @@ func (b *Backend) materializeTaskLogs(ctx context.Context, taskResult *protocol.
 func (b *Backend) CancelSubmission(context.Context, string, map[string]any) error { return nil }
 func (b *Backend) Cancel(context.Context) error                                   { return nil }
 func (b *Backend) remoteRoot() string {
+	if b.Config.DriveRoot != "" {
+		return b.Config.DriveRoot
+	}
 	if b.Config.RemoteRoot != "" {
 		return b.Config.RemoteRoot
 	}

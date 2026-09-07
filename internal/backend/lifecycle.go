@@ -12,9 +12,11 @@ type RunContext struct {
 
 // RunOutcome describes the terminal state passed to a run-scoped backend cleanup hook.
 type RunOutcome struct {
-	RunID  string
-	Status string
-	Err    error
+	RunID            string
+	Status           string
+	Err              error
+	ProjectDirectory string
+	StateDirectory   string
 }
 
 // RunLifecycle is optional. Backends implement it when they need run-scoped setup and teardown.
