@@ -57,6 +57,7 @@ type Backend struct {
 	MountPreflight DriveMountPreflight
 	Materializer   LogMaterializer
 	Workspace      WorkspaceSyncer
+	ResultReader   RemoteResultReader
 	mutex          sync.Mutex
 	runtime        Runtime
 	active         bool
@@ -288,3 +289,4 @@ func (b *Backend) scratchRoot() string {
 
 var _ backend.Backend = (*Backend)(nil)
 var _ backend.RunLifecycle = (*Backend)(nil)
+var _ backend.Recoverable = (*Backend)(nil)
