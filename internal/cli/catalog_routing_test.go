@@ -43,8 +43,8 @@ func TestLoadPlanAutomaticallyRoutesOtterConfigurations(t *testing.T) {
 		expectedWorkflow string
 		expectedTasks    int
 	}{
-		{name: "single species bisulfite", configuration: "testdata/configs/beaverbs-step1.yaml", phase: "step1", expectedWorkflow: "BeaverBS", expectedTasks: 12},
-		{name: "multi species bisulfite", configuration: "testdata/configs/beaverpdx-step1.yaml", phase: "step1", expectedWorkflow: "BeaverPDX", expectedTasks: 12},
+		{name: "single species bisulfite", configuration: "testdata/configs/beaverbs-step1.yaml", phase: "step1", expectedWorkflow: "BeaverBS", expectedTasks: 6},
+		{name: "multi species bisulfite", configuration: "testdata/configs/beaverpdx-step1.yaml", phase: "step1", expectedWorkflow: "BeaverPDX", expectedTasks: 6},
 		{name: "single species RNA", configuration: "testdata/configs/beaverrna-step2.yaml", phase: "step2", expectedWorkflow: "BeaverRNA", expectedTasks: 6},
 		{name: "multi species RNA", configuration: "testdata/configs/beaverrnaseqpdx-step3.yaml", phase: "step3", expectedWorkflow: "BeaverRNASEQPDX", expectedTasks: 3},
 	}

@@ -107,15 +107,15 @@ func assertBeaverRNAStep2ValidationManifest(t *testing.T, projectDirectory strin
 	}
 
 	expectedArtifacts := map[string]string{
-		"counts":            filepath.Join("workflow", "expression", sampleID+"_human.txt"),
-		"sorted_bam":        filepath.Join("workflow", "bsmap", sampleID+"_human.bam"),
-		"qualimap_report":   filepath.Join("workflow", "QC", "qualimap", sampleID+"_human", "qualimapReport.html"),
-		"trim_report_r1":    filepath.Join("workflow", "trim", sampleID+"_R1.fastq.gz_trimming_report.txt"),
-		"trim_report_r2":    filepath.Join("workflow", "trim", sampleID+"_R2.fastq.gz_trimming_report.txt"),
-		"fastqc_before_r1":  filepath.Join("workflow", "fastqc_raw", sampleID+"_R1_fastqcx", "fastqc_data.txt"),
-		"fastqc_before_r2":  filepath.Join("workflow", "fastqc_raw", sampleID+"_R2_fastqcx", "fastqc_data.txt"),
-		"fastqc_after_r1":   filepath.Join("workflow", "fastqc_clean", sampleID+"_val_1_fastqcx", "fastqc_data.txt"),
-		"fastqc_after_r2":   filepath.Join("workflow", "fastqc_clean", sampleID+"_val_2_fastqcx", "fastqc_data.txt"),
+		"counts":           filepath.Join("workflow", "expression", sampleID+"_human.txt"),
+		"sorted_bam":       filepath.Join("workflow", "bsmap", sampleID+"_human.bam"),
+		"qualimap_report":  filepath.Join("workflow", "QC", "qualimap", sampleID+"_human", "qualimapReport.html"),
+		"trim_report_r1":   filepath.Join("workflow", "trim", sampleID+"_R1.fastq.gz_trimming_report.txt"),
+		"trim_report_r2":   filepath.Join("workflow", "trim", sampleID+"_R2.fastq.gz_trimming_report.txt"),
+		"fastqc_before_r1": filepath.Join("workflow", "fastqc_raw", sampleID+"_R1_fastqcx", "fastqc_data.txt"),
+		"fastqc_before_r2": filepath.Join("workflow", "fastqc_raw", sampleID+"_R2_fastqcx", "fastqc_data.txt"),
+		"fastqc_after_r1":  filepath.Join("workflow", "fastqc_clean", sampleID+"_val_1_fastqcx", "fastqc_data.txt"),
+		"fastqc_after_r2":  filepath.Join("workflow", "fastqc_clean", sampleID+"_val_2_fastqcx", "fastqc_data.txt"),
 	}
 	if len(manifest.Artifacts) != len(expectedArtifacts) {
 		t.Fatalf("expected %d BeaverRNA step2 validation artifacts, got %#v", len(expectedArtifacts), manifest.Artifacts)

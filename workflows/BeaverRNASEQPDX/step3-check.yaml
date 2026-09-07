@@ -7,7 +7,7 @@ on:
     modes: [RNASEQ]
 defaults:
   shell: bash
-  environment: otter-core-bismark-rust-3.1.0-r2
+  environment: otter-core
   observability:
     metrics: task
     capture_stdout: true
@@ -196,7 +196,7 @@ jobs:
       partition: amd_512
     steps:
       - name: Run RNA-seq PDX QC summary
-        environment: otter-core-bismark-rust-3.1.0-r2
+        environment: otter-core
         run: |
           mkdir -p '${{ config.directories.qc_summary }}'
           qctb --config '${{ inputs.run_config }}' --output '${{ outputs.report }}' --rnaseq

@@ -7,7 +7,7 @@ on:
     modes: [RRBS, WGBS, BSSEQ]
 defaults:
   shell: bash
-  environment: otter-core-bismark-rust-3.1.0-r2
+  environment: otter-core
   observability:
     metrics: task
     capture_stdout: true
@@ -34,28 +34,6 @@ jobs:
           mkdir -p "$(dirname '${{ outputs.read1_data }}')" "$(dirname '${{ outputs.read2_data }}')"
           fastqcx -q '${{ inputs.read1 }}' -s '${{ config.directories.qc.before }}/${{ sample.id }}_R1_fastqcx' --no-html
           fastqcx -q '${{ inputs.read2 }}' -s '${{ config.directories.qc.before }}/${{ sample.id }}_R2_fastqcx' --no-html
-
-  legacy_fastqc_before:
-    name: Legacy FastQC before trimming
-    scope: sample
-    dimensions: [sample]
-    inputs:
-      read1: "${{ config.output.raw_dir }}/${{ sample.id }}_R1.fastq.gz"
-      read2: "${{ config.output.raw_dir }}/${{ sample.id }}_R2.fastq.gz"
-    outputs:
-      read1_zip: "${{ config.directories.qc.before }}/${{ sample.id }}_R1_fastqc.zip"
-      read1_html: "${{ config.directories.qc.before }}/${{ sample.id }}_R1_fastqc.html"
-      read2_zip: "${{ config.directories.qc.before }}/${{ sample.id }}_R2_fastqc.zip"
-      read2_html: "${{ config.directories.qc.before }}/${{ sample.id }}_R2_fastqc.html"
-    resources:
-      cores: 6
-      memory: 4G
-      partition: amd_512
-    steps:
-      - name: Run legacy FastQC before trimming
-        run: |
-          mkdir -p '${{ config.directories.qc.before }}'
-          enva run otter-core -- fastqc -o '${{ config.directories.qc.before }}' -t '${{ resources.cores }}' --extract '${{ inputs.read1 }}' '${{ inputs.read2 }}'
 
   trim_reads:
     name: Trim paired reads
@@ -108,45 +86,3 @@ jobs:
           fastqcx -q '${{ inputs.read1 }}' -s '${{ config.directories.qc.after }}/${{ sample.id }}_val_1_fastqcx' --no-html
           fastqcx -q '${{ inputs.read2 }}' -s '${{ config.directories.qc.after }}/${{ sample.id }}_val_2_fastqcx' --no-html
 
-  legacy_fastqc_after:
-    name: Legacy FastQC after trimming
-    scope: sample
-    dimensions: [sample]
-    inputs:
-      read1: "${{ jobs.trim_reads.outputs.read1 }}"
-      read2: "${{ jobs.trim_reads.outputs.read2 }}"
-    outputs:
-      read1_zip: "${{ config.directories.qc.after }}/${{ sample.id }}_val_1_fastqc.zip"
-      read1_html: "${{ config.directories.qc.after }}/${{ sample.id }}_val_1_fastqc.html"
-      read2_zip: "${{ config.directories.qc.after }}/${{ sample.id }}_val_2_fastqc.zip"
-      read2_html: "${{ config.directories.qc.after }}/${{ sample.id }}_val_2_fastqc.html"
-    resources:
-      cores: 6
-      memory: 4G
-      partition: amd_512
-    steps:
-      - name: Run legacy FastQC after trimming
-        run: |
-          mkdir -p '${{ config.directories.qc.after }}'
-          enva run otter-core -- fastqc -o '${{ config.directories.qc.after }}' -t '${{ resources.cores }}' --extract '${{ inputs.read1 }}' '${{ inputs.read2 }}'
-
-  legacy_seqkit_statistics:
-    name: Legacy SeqKit statistics before and after trimming
-    scope: sample
-    dimensions: [sample]
-    inputs:
-      raw_read1: "${{ config.output.raw_dir }}/${{ sample.id }}_R1.fastq.gz"
-      raw_read2: "${{ config.output.raw_dir }}/${{ sample.id }}_R2.fastq.gz"
-      trimmed_read1: "${{ jobs.trim_reads.outputs.read1 }}"
-      trimmed_read2: "${{ jobs.trim_reads.outputs.read2 }}"
-    outputs:
-      statistics: "${{ config.output.workflow_dir }}/QC/${{ sample.id }}_seqkit_stat.txt"
-    resources:
-      cores: 6
-      memory: 4G
-      partition: amd_512
-    steps:
-      - name: Run legacy SeqKit statistics
-        run: |
-          mkdir -p '${{ config.output.workflow_dir }}/QC'
-          enva run otter-core -- seqkit stat -a -j '${{ resources.cores }}' -T -b '${{ inputs.raw_read1 }}' '${{ inputs.raw_read2 }}' '${{ inputs.trimmed_read1 }}' '${{ inputs.trimmed_read2 }}' > '${{ outputs.statistics }}'

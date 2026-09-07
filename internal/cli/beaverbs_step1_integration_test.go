@@ -55,23 +55,17 @@ func TestBeaverBSStep1RunsLocallyAndUsesCache(t *testing.T) {
 		t.Fatalf("logs command did not expose controller log path:\n%s", listedLogs)
 	}
 	firstStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", firstRunID)
-	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 12") {
+	if !strings.Contains(firstStatus, "status: succeeded") || !strings.Contains(firstStatus, "succeeded: 6") {
 		t.Fatalf("unexpected first run status:\n%s", firstStatus)
 	}
 
 	for _, expectedOutput := range []string{
 		"workflow/fastqc_raw/sample-a_R1_fastqcx/fastqc_data.txt",
 		"workflow/fastqc_raw/sample-b_R2_fastqcx/fastqc_data.txt",
-		"workflow/fastqc_raw/sample-a_R1_fastqc.zip",
-		"workflow/fastqc_raw/sample-b_R2_fastqc.html",
 		"workflow/trim/sample-a_val_1.fq.gz",
 		"workflow/trim/sample-b_R2.fastq.gz_trimming_report.txt",
 		"workflow/fastqc_clean/sample-a_val_1_fastqcx/fastqc_data.txt",
 		"workflow/fastqc_clean/sample-b_val_2_fastqcx/fastqc_data.txt",
-		"workflow/fastqc_clean/sample-a_val_1_fastqc.zip",
-		"workflow/fastqc_clean/sample-b_val_2_fastqc.html",
-		"workflow/QC/sample-a_seqkit_stat.txt",
-		"workflow/QC/sample-b_seqkit_stat.txt",
 	} {
 		if _, err := os.Stat(filepath.Join(projectDirectory, expectedOutput)); err != nil {
 			t.Fatalf("expected BeaverBS output %q: %v", expectedOutput, err)
@@ -93,7 +87,7 @@ func TestBeaverBSStep1RunsLocallyAndUsesCache(t *testing.T) {
 	)
 	secondRunID := outputValue(t, secondRunOutput, "run_id")
 	secondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID)
-	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 12") {
+	if !strings.Contains(secondStatus, "status: succeeded") || !strings.Contains(secondStatus, "cached: 6") {
 		t.Fatalf("unexpected cached run status:\n%s", secondStatus)
 	}
 	verboseSecondStatus := runCraftmake(t, binaryPath, commandEnvironment, "status", "--state", statePath, "--run", secondRunID, "--verbose")

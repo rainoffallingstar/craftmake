@@ -26,7 +26,7 @@ func TestValidateCommandDefaultsToTextAndSupportsJSONEnvelope(t *testing.T) {
 	if err := textCommand.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if output := textOutput.String(); output != "valid: BeaverBS step1 (6 tasks, 6 submissions)\n" {
+	if output := textOutput.String(); output != "valid: BeaverBS step1 (3 tasks, 3 submissions)\n" {
 		t.Fatalf("unexpected default text output %q", output)
 	}
 

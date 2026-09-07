@@ -7,6 +7,7 @@ on:
     modes: [RRBS, WGBS, BSSEQ]
 defaults:
   shell: bash
+  environment: otter-core
   observability:
     metrics: task
     capture_stdout: true
@@ -200,7 +201,7 @@ jobs:
       partition: amd_512
     steps:
       - name: Run Bismark report
-        environment: otter-core-bismark-rust-3.1.0-r2
+        environment: otter-core
         run: |
           mkdir -p '${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}'
           bismark2report --dir '${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}' --output '${{ sample.id }}.html' --alignment_report '${{ inputs.alignment_report }}' --splitting_report '${{ inputs.splitting_report }}' --mbias_report '${{ inputs.mbias_report }}'
@@ -219,7 +220,7 @@ jobs:
       partition: amd_512
     steps:
       - name: Run Bismark summary
-        environment: otter-core-bismark-rust-3.1.0-r2
+        environment: otter-core
         run: |
           cd '${{ config.directories.bsmap.main }}/${{ config.workflow.species.graft }}'
           bismark2summary *_val_1_bismark_bt2_pe.bam

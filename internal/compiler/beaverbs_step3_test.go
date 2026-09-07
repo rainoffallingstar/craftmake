@@ -45,7 +45,7 @@ func TestCompileBeaverBSStep3Fixture(t *testing.T) {
 	if len(task.Steps) != 3 {
 		t.Fatalf("expected sort, pair filtering and extraction steps, got %#v", task.Steps)
 	}
-	if task.Steps[0].Environment != "otter-core-bismark-rust-3.1.0-r2" || task.Steps[1].Environment != "" || task.Steps[2].Environment != "otter-core-bismark-rust-3.1.0-r2" {
+	if task.Steps[0].Environment != "otter-core" || task.Steps[1].Environment != "" || task.Steps[2].Environment != "otter-core" {
 		t.Fatalf("unexpected step environment boundaries: %#v", task.Steps)
 	}
 	if !strings.Contains(task.Steps[0].Command, "samtools sort") || !strings.Contains(task.Steps[1].Command, "pairbam") || !strings.Contains(task.Steps[2].Command, "bismark_methylation_extractor") || !strings.Contains(task.Steps[2].Command, "--multicore 8 --buffer_size 20G") {

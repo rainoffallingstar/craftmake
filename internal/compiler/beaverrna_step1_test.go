@@ -36,8 +36,8 @@ func TestCompileBeaverRNAStep1Fixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Tasks) != 12 || len(plan.Submissions) != 12 {
-		t.Fatalf("expected twelve tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
+	if len(plan.Tasks) != 6 || len(plan.Submissions) != 6 {
+		t.Fatalf("expected six tasks and submissions, got tasks=%d submissions=%d", len(plan.Tasks), len(plan.Submissions))
 	}
 
 	fastqcBeforeTask := plan.TaskByID["BeaverRNA/step1/fastqc_before/sample=sample-a"]

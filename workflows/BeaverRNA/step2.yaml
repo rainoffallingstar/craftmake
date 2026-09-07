@@ -7,7 +7,7 @@ on:
     modes: [RNASEQ]
 defaults:
   shell: bash
-  environment: otter-core-bismark-rust-3.1.0-r2
+  environment: otter-core
   observability:
     metrics: task
     capture_stdout: true

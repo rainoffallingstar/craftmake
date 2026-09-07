@@ -28,7 +28,7 @@ jobs:
       partition: amd_512
     steps:
       - name: Sort BAM by read name
-        environment: otter-core-bismark-rust-3.1.0-r2
+        environment: otter-core
         run: |
           mkdir -p "$(dirname '${{ outputs.name_sorted_bam }}')" '${{ config.directories.methylation_call }}'
           samtools sort -@ '${{ resources.cores }}' -n -o '${{ outputs.name_sorted_bam }}.tmp.bam' '${{ inputs.bam }}'
@@ -37,6 +37,6 @@ jobs:
           pairbam '${{ outputs.name_sorted_bam }}.tmp.bam' '${{ outputs.name_sorted_bam }}'
           rm -f '${{ outputs.name_sorted_bam }}.tmp.bam'
       - name: Extract methylation calls
-        environment: otter-core-bismark-rust-3.1.0-r2
+        environment: otter-core
         run: |
           bismark_methylation_extractor --paired-end --gzip --output_dir '${{ config.directories.methylation_call }}' --comprehensive --merge_non_CpG --bedGraph --multicore 8 --buffer_size 20G '${{ outputs.name_sorted_bam }}'
