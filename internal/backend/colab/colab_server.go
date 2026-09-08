@@ -93,7 +93,7 @@ func NewColabServerClient(colabDomain, colabGapiDomain string, client HTTPDoer) 
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return &ColabServerClient{ColabDomain: strings.TrimRight(colabDomain, "/"), ColabGapiDomain: strings.TrimRight(colabGapiDomain, "/"), Client: client, ClientAgent: "craftmake"}
+	return &ColabServerClient{ColabDomain: strings.TrimRight(colabDomain, "/"), ColabGapiDomain: strings.TrimRight(colabGapiDomain, "/"), Client: client, ClientAgent: "vscode"}
 }
 
 func (c *ColabServerClient) token() (string, error) {
@@ -111,6 +111,8 @@ func (c *ColabServerClient) Assign(ctx context.Context, spec RuntimeSpec) (Assig
 		return Assignment{}, fmt.Errorf("notebook hash is required")
 	}
 	path += "?nbh=" + url.QueryEscape(spec.NotebookHash)
+	// The Colab API requires the authuser parameter to be set (colab-vscode).
+	path += "&authuser=0"
 	variant := spec.Variant
 	if variant == "" {
 		variant = "DEFAULT"
