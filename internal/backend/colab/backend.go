@@ -116,7 +116,7 @@ func (b *Backend) BeginRun(ctx context.Context, run backend.RunContext) error {
 			mountPath = "/content/drive"
 		}
 		if err := b.MountPreflight.CheckMount(ctx, DriveMountRequest{RunID: run.RunID, SessionID: config.SessionID, AuthConfigPath: config.AuthConfigPath, MountPath: mountPath, DriveRoot: config.DriveRoot}); err != nil {
-			return rollback(fmt.Errorf("drive mount preflight: %w", err))
+			return rollback(&MountNotAuthorizedError{SessionID: config.SessionID, AuthConfigPath: config.AuthConfigPath, MountPath: mountPath, DriveRoot: config.DriveRoot, Err: err})
 		}
 	}
 	if b.Workspace != nil && config.LocalRoot != "" {

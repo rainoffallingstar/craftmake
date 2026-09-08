@@ -13,7 +13,25 @@ const (
 	ErrorKernelDisconnected ErrorKind = "kernel-disconnected"
 	ErrorTransferFailed     ErrorKind = "transfer-failed"
 	ErrorProtocolMismatch   ErrorKind = "protocol-mismatch"
+	ErrorMountNotAuthorized ErrorKind = "mount-not-authorized"
 )
+
+// MountNotAuthorizedError reports that the Drive mount preflight failed because
+// the runtime is not authorized to mount Drive. It carries an actionable hint
+// referencing the named session and the one-time authorization command, so the
+// user can authorize before retrying instead of blocking the kernel on input.
+type MountNotAuthorizedError struct {
+	SessionID      string
+	AuthConfigPath string
+	MountPath      string
+	DriveRoot      string
+	Err            error
+}
+
+func (e *MountNotAuthorizedError) Error() string {
+	return fmt.Sprintf("Drive mount is not authorized for session %q: %v; run `craftmake colab drive authorize --session %s` to authorize once", e.SessionID, e.Err, e.SessionID)
+}
+func (e *MountNotAuthorizedError) Unwrap() error { return e.Err }
 
 type RemoteError struct {
 	Kind       ErrorKind
