@@ -13,7 +13,7 @@ import (
 func newColabCommand() *cobra.Command {
 	parent := &cobra.Command{Use: "colab", Short: "Configure and inspect Google Colab execution"}
 	auth := &cobra.Command{Use: "auth", Short: "Manage Colab session authentication"}
-	auth.AddCommand(newColabAuthConfigureCommand(), newColabAuthShowCommand())
+	auth.AddCommand(newColabAuthLoginCommand(), newColabAuthConfigureCommand(), newColabAuthShowCommand())
 	drive := &cobra.Command{Use: "drive", Short: "Manage Google Drive session mounts"}
 	drive.AddCommand(newColabDriveMountCommand())
 	parent.AddCommand(auth, drive, newColabDoctorCommand())
