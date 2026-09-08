@@ -98,3 +98,69 @@ func TestColabAuthLoginEndToEnd(t *testing.T) {
 		t.Fatalf("auth config not written: %v", err)
 	}
 }
+
+func TestColabAuthLoginUsesBuiltinClientAndColabScope(t *testing.T) {
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "a", "refresh_token": "r", "expires_in": 3600, "token_type": "Bearer"})
+	}))
+	defer tokenServer.Close()
+	userServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"name": "T", "email": "t@e.com"})
+	}))
+	defer userServer.Close()
+	_ = os.Setenv("CRAFTMAKE_COLAB_TOKEN_URL", tokenServer.URL)
+	_ = os.Setenv("CRAFTMAKE_COLAB_USERINFO_URL", userServer.URL)
+	defer func() {
+		_ = os.Unsetenv("CRAFTMAKE_COLAB_TOKEN_URL")
+		_ = os.Unsetenv("CRAFTMAKE_COLAB_USERINFO_URL")
+	}()
+
+	configPath := filepath.Join(t.TempDir(), "colab-auth.json")
+	cmd := newColabAuthLoginCommand()
+	cmd.SetArgs([]string{"--config", configPath, "--session", "gpu", "--timeout", "5s"})
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	done := make(chan error, 1)
+	go func() { done <- cmd.Execute() }()
+
+	var authURL string
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		text := out.String()
+		if idx := strings.Index(text, "https://accounts.google.com/o/oauth2/v2/auth?"); idx >= 0 {
+			line := text[idx:]
+			if end := strings.IndexAny(line, " \n"); end > 0 {
+				line = line[:end]
+			}
+			authURL = line
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if authURL == "" {
+		t.Fatalf("no auth URL printed: %q", out.String())
+	}
+	parsed, err := url.Parse(authURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := parsed.Query()
+	if q.Get("client_id") != defaultColabClientID {
+		t.Fatalf("client_id = %q, want built-in %q", q.Get("client_id"), defaultColabClientID)
+	}
+	scope := q.Get("scope")
+	if !strings.Contains(scope, "colaboratory") {
+		t.Fatalf("scope missing colaboratory: %q", scope)
+	}
+	if strings.Contains(scope, "drive") {
+		t.Fatalf("scope should not include drive: %q", scope)
+	}
+	resp, err := http.Get(q.Get("redirect_uri") + "?code=c&state=nonce%3Dgpu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if err := <-done; err != nil {
+		t.Fatalf("login failed: %v", err)
+	}
+}

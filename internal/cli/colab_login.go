@@ -11,6 +11,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Built-in Colab OAuth client, matching googlecolab/colab-vscode and
+// MurphyLo/colab-cli (and the cpa-usage-keeper reference). These are the public
+// Colab client credentials; users can override with CRAFTMAKE_COLAB_CLIENT_ID /
+// CRAFTMAKE_COLAB_CLIENT_SECRET or --client-id / --client-secret.
+const (
+	defaultColabClientID     = "1014160490159-cvot3bea7tgkp72a4m29h20d9ddo6bne.apps.googleusercontent.com"
+	defaultColabClientSecret = "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"
+)
+
+// colabRequiredScopes matches colab-vscode / colab-cli: Colab uses the
+// colaboratory scope, not the Drive scope.
+var colabRequiredScopes = []string{"profile", "email", "https://www.googleapis.com/auth/colaboratory"}
+
 func newColabAuthLoginCommand() *cobra.Command {
 	var configPath, sessionID, driveRoot, mountPath, clientID, clientSecret, credentialFile string
 	var timeout time.Duration
@@ -25,7 +38,10 @@ func newColabAuthLoginCommand() *cobra.Command {
 			clientSecret = os.Getenv("CRAFTMAKE_COLAB_CLIENT_SECRET")
 		}
 		if clientID == "" {
-			return usageError("OAuth client id is required; set CRAFTMAKE_COLAB_CLIENT_ID or pass --client-id")
+			clientID = defaultColabClientID
+		}
+		if clientSecret == "" {
+			clientSecret = defaultColabClientSecret
 		}
 		path, err := expandUserPath(configPath)
 		if err != nil {
@@ -52,7 +68,7 @@ func newColabAuthLoginCommand() *cobra.Command {
 		}
 		defer server.Close()
 
-		oauth := colab.OAuthConfig{ClientID: clientID, ClientSecret: clientSecret, Scopes: []string{"openid", "email", "profile", "https://www.googleapis.com/auth/drive"}, AuthURL: os.Getenv("CRAFTMAKE_COLAB_AUTH_URL"), TokenURL: os.Getenv("CRAFTMAKE_COLAB_TOKEN_URL"), UserInfoURL: os.Getenv("CRAFTMAKE_COLAB_USERINFO_URL")}
+		oauth := colab.OAuthConfig{ClientID: clientID, ClientSecret: clientSecret, Scopes: colabRequiredScopes, AuthURL: os.Getenv("CRAFTMAKE_COLAB_AUTH_URL"), TokenURL: os.Getenv("CRAFTMAKE_COLAB_TOKEN_URL"), UserInfoURL: os.Getenv("CRAFTMAKE_COLAB_USERINFO_URL")}
 		authURL := oauth.AuthorizationURL(state, redirectURI, challenge)
 		fmt.Fprintf(command.OutOrStdout(), "\nOpen this URL in your browser to authorize:\n%s\n\nWaiting for authorization...\n", authURL)
 		_ = openBrowser(authURL)
