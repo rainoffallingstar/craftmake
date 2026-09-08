@@ -16,11 +16,13 @@ import (
 // identifier. Colab's NBH-Regex is ^[a-zA-Z0-9\-_.]{44}$; colab-vscode builds it
 // from a UUID by replacing '-' with '_' and padding with '.' to 44 chars. We
 // derive a deterministic UUID from the identifier to keep the nbh stable per run.
-func notebookHash(identifier string) string {
+func NotebookHash(identifier string) string {
 	sum := sha256.Sum256([]byte(identifier))
 	uuid := fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", sum[0:4], sum[4:6], sum[6:8], sum[8:10], sum[10:16])
 	return strings.ReplaceAll(uuid, "-", "_") + strings.Repeat(".", 44-len(uuid))
 }
+
+func notebookHash(identifier string) string { return NotebookHash(identifier) }
 
 // Const default Colab backend domains used by the reference implementation.
 const (
@@ -165,7 +167,7 @@ func (c *ColabServerClient) token() (string, error) {
 func (c *ColabServerClient) Assign(ctx context.Context, spec RuntimeSpec) (Assignment, error) {
 	path := c.tunPath("assign")
 	if spec.NotebookHash == "" {
-		return Assignment{}, fmt.Errorf("notebook hash is required")
+		spec.NotebookHash = NotebookHash("craftmake-default-session")
 	}
 	path += "?nbh=" + url.QueryEscape(spec.NotebookHash)
 	// The Colab API requires the authuser parameter to be set (colab-vscode).
@@ -251,6 +253,35 @@ func (c *ColabServerClient) RefreshProxy(ctx context.Context, endpoint string) (
 		return RuntimeProxyInfo{}, &RemoteError{Kind: ErrorProtocolMismatch, Operation: "refresh proxy", Err: fmt.Errorf("proxy token response missing token or url")}
 	}
 	return token, nil
+}
+
+type CredentialsPropagationResult struct {
+	Success                 bool   `json:"success"`
+	UnauthorizedRedirectURI string `json:"unauthorized_redirect_uri,omitempty"`
+}
+
+// PropagateCredentials delegates credentials (such as dfs_ephemeral for Drive mount)
+// to an assigned Colab runtime endpoint.
+func (c *ColabServerClient) PropagateCredentials(ctx context.Context, endpoint, authType string, dryRun bool) (CredentialsPropagationResult, error) {
+	if authType == "" {
+		authType = "dfs_ephemeral"
+	}
+	dryRunStr := "false"
+	if dryRun {
+		dryRunStr = "true"
+	}
+	path := c.tunPath("credentials-propagation/"+endpoint) + fmt.Sprintf("?authtype=%s&version=2&dryrun=%s&propagate=true&record=false", url.QueryEscape(authType), dryRunStr)
+	var tokenResp struct {
+		Token string `json:"token"`
+	}
+	if err := c.do(ctx, http.MethodGet, c.ColabDomain, path, nil, &tokenResp); err != nil {
+		return CredentialsPropagationResult{}, err
+	}
+	var result CredentialsPropagationResult
+	if err := c.do(ctx, http.MethodPost, c.ColabDomain, path, nil, &result, tokenResp.Token); err != nil {
+		return CredentialsPropagationResult{}, err
+	}
+	return result, nil
 }
 
 // ListAssignments lists all active runtime assignments on the user's Colab account.

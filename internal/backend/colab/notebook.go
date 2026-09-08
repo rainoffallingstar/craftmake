@@ -65,7 +65,33 @@ func BuildNotebookRedacted(manifest *protocol.TaskManifest, mapping RemoteTaskMa
 }
 
 func bootstrapSource(mapping RemoteTaskMapping) string {
-	return strings.Join([]string{"import os", "from pathlib import Path", "work = Path(" + pythonString(mapping.WorkDirectory) + ")", "temp = Path(" + pythonString(mapping.TempDirectory) + ")", "runtime = Path(" + pythonString(mapping.RuntimeDirectory) + ")", "result = Path(" + pythonString(mapping.ResultPath) + ")", "for path in (work, temp, runtime): path.mkdir(parents=True, exist_ok=True)", `os.environ["CRAFTMAKE_WORK"] = str(work)`, `os.environ["CRAFTMAKE_TEMP"] = str(temp)`, `os.environ["CRAFTMAKE_RUNTIME"] = str(runtime)`}, "\n") + "\n"
+	mountBlock := ""
+	if strings.HasPrefix(mapping.WorkDirectory, "/content/drive") || strings.HasPrefix(mapping.ResultPath, "/content/drive") {
+		mountBlock = `if not os.path.ismount('/content/drive'):
+    try:
+        from google.colab import drive
+        drive.mount('/content/drive', force_remount=False)
+    except Exception as _e:
+        print(f"Notice: auto drive.mount: {_e}")`
+	}
+	lines := []string{
+		"import os",
+		"from pathlib import Path",
+	}
+	if mountBlock != "" {
+		lines = append(lines, mountBlock)
+	}
+	lines = append(lines,
+		"work = Path("+pythonString(mapping.WorkDirectory)+")",
+		"temp = Path("+pythonString(mapping.TempDirectory)+")",
+		"runtime = Path("+pythonString(mapping.RuntimeDirectory)+")",
+		"result = Path("+pythonString(mapping.ResultPath)+")",
+		"for path in (work, temp, runtime): path.mkdir(parents=True, exist_ok=True)",
+		`os.environ["CRAFTMAKE_WORK"] = str(work)`,
+		`os.environ["CRAFTMAKE_TEMP"] = str(temp)`,
+		`os.environ["CRAFTMAKE_RUNTIME"] = str(runtime)`,
+	)
+	return strings.Join(lines, "\n") + "\n"
 }
 
 func bashSource(step protocol.StepManifest, mapping RemoteTaskMapping) string {

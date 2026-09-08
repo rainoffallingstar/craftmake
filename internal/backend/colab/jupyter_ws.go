@@ -80,9 +80,11 @@ func jupyterVerify(key string, msg jupyterMsg) bool {
 // TaskResult decoder can find the sentinel. HMACKey, when set, is used to sign
 // outbound messages and verify inbound ones.
 type JupyterWebSocketExecutor struct {
-	SessionID string
-	Client    *http.Client
-	HMACKey   string
+	SessionID   string
+	Client      *http.Client
+	HMACKey     string
+	ColabClient *ColabServerClient
+	Endpoint    string
 
 	mu     sync.Mutex
 	active *minimalWSConn
@@ -108,6 +110,9 @@ func (e *JupyterWebSocketExecutor) ExecuteNotebook(ctx context.Context, runtime 
 	session := e.SessionID
 	if session == "" {
 		session = "craftmake"
+	}
+	if runtime.ID != "" {
+		e.Endpoint = runtime.ID
 	}
 
 	targetWS := runtime.ID
@@ -151,7 +156,7 @@ func (e *JupyterWebSocketExecutor) ExecuteNotebook(ctx context.Context, runtime 
 		if err != nil {
 			return "", &RemoteError{Kind: ErrorKernelDisconnected, Operation: "send execute_request", Err: err}
 		}
-		cellOutput, err := e.drainUntilReply(ctx, conn, msgID)
+		cellOutput, err := e.drainUntilReply(ctx, conn, session, msgID)
 		if err != nil {
 			return "", err
 		}
@@ -179,7 +184,7 @@ func (e *JupyterWebSocketExecutor) sendExecuteRequest(conn *minimalWSConn, sessi
 // drainUntilReply reads iopub/shell messages until the execute_reply for the
 // given cell. It accumulates stream/display_data/error output and terminates on
 // execute_reply. Inbound signatures are verified when HMACKey is configured.
-func (e *JupyterWebSocketExecutor) drainUntilReply(ctx context.Context, conn *minimalWSConn, msgID string) (string, error) {
+func (e *JupyterWebSocketExecutor) drainUntilReply(ctx context.Context, conn *minimalWSConn, session, msgID string) (string, error) {
 	var output strings.Builder
 	for {
 		select {
@@ -213,10 +218,50 @@ func (e *JupyterWebSocketExecutor) drainUntilReply(ctx context.Context, conn *mi
 			if content, ok := msg.Content.(map[string]any); ok {
 				writeErrorTraceback(&output, content)
 			}
+		case "colab_request":
+			e.handleColabRequest(ctx, conn, session, msg)
 		case "execute_reply":
 			return output.String(), nil
 		}
 	}
+}
+
+func (e *JupyterWebSocketExecutor) handleColabRequest(ctx context.Context, conn *minimalWSConn, session string, msg jupyterMsg) {
+	var colabMsgID any
+	if meta := msg.Metadata; meta != nil {
+		colabMsgID = meta["colab_msg_id"]
+	}
+	var authType string
+	if content, ok := msg.Content.(map[string]any); ok {
+		if req, ok := content["request"].(map[string]any); ok {
+			if at, ok := req["authType"].(string); ok {
+				authType = at
+			}
+		}
+	}
+	var propErr error
+	if e.ColabClient != nil && e.Endpoint != "" {
+		_, propErr = e.ColabClient.PropagateCredentials(ctx, e.Endpoint, authType, false)
+	}
+	val := map[string]any{
+		"type":         "colab_reply",
+		"colab_msg_id": colabMsgID,
+	}
+	if propErr != nil {
+		val["error"] = propErr.Error()
+	}
+	reply := jupyterMsg{
+		Header:       newJupyterHeader(session, "input_reply"),
+		ParentHeader: json.RawMessage("{}"),
+		Metadata:     map[string]any{},
+		Content: map[string]any{
+			"value": val,
+		},
+		Channel: "stdin",
+	}
+	reply.Signature = jupyterSign(e.HMACKey, reply.Content)
+	data, _ := json.Marshal(reply)
+	_ = conn.WriteText(data)
 }
 
 func writeContentText(output *strings.Builder, content map[string]any, key string) {

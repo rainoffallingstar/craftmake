@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	colab "github.com/fallingstar10/craftmake/internal/backend/colab"
 	"github.com/spf13/cobra"
@@ -67,7 +69,12 @@ func newColabAuthShowCommand() *cobra.Command {
 
 func newColabDriveMountCommand() *cobra.Command {
 	var configPath, sessionID string
-	command := &cobra.Command{Use: "mount", Short: "Validate and print the Drive mount plan for a session", Args: noArguments, RunE: func(command *cobra.Command, _ []string) error {
+	var authorize bool
+	var timeout time.Duration
+	command := &cobra.Command{Use: "mount", Short: "Authorize and configure Drive mount for a Colab session", Args: noArguments, RunE: func(command *cobra.Command, _ []string) error {
+		if sessionID == "" {
+			return usageError("--session is required")
+		}
 		path, err := expandUserPath(configPath)
 		if err != nil {
 			return usageError("invalid --config: %v", err)
@@ -76,13 +83,86 @@ func newColabDriveMountCommand() *cobra.Command {
 		if err != nil {
 			return configurationError(err)
 		}
-		plan := map[string]any{"session": auth.SessionID, "auth_config": path, "mount_path": auth.MountPath, "drive_root": auth.DriveRoot, "status": "ready-for-backend-mount"}
-		data, _ := json.MarshalIndent(plan, "", "  ")
-		fmt.Fprintln(command.OutOrStdout(), string(data))
-		return nil
+		if !authorize {
+			plan := map[string]any{"session": auth.SessionID, "auth_config": path, "mount_path": auth.MountPath, "drive_root": auth.DriveRoot, "status": "ready-for-backend-mount"}
+			data, _ := json.MarshalIndent(plan, "", "  ")
+			fmt.Fprintln(command.OutOrStdout(), string(data))
+			return nil
+		}
+
+		client := colab.NewColabServerClient(os.Getenv("CRAFTMAKE_COLAB_DOMAIN"), os.Getenv("CRAFTMAKE_COLAB_GAPI_DOMAIN"), nil)
+		client.AppName = "craftmake"
+		client.ExtensionVersion = "0.1.0"
+		if refreshToken, ok := resolveColabRefreshToken(auth); ok {
+			clientID := os.Getenv("CRAFTMAKE_COLAB_CLIENT_ID")
+			if clientID == "" {
+				clientID = defaultColabClientID
+			}
+			clientSecret := os.Getenv("CRAFTMAKE_COLAB_CLIENT_SECRET")
+			if clientSecret == "" {
+				clientSecret = defaultColabClientSecret
+			}
+			manager := &colab.TokenManager{Config: colab.TokenConfig{ClientID: clientID, ClientSecret: clientSecret, TokenURL: os.Getenv("CRAFTMAKE_COLAB_TOKEN_URL")}}
+			manager.SetRefreshToken(refreshToken)
+			client.GetAccessToken = func() (string, error) { return manager.AccessToken(context.Background()) }
+		} else {
+			return configurationError(fmt.Errorf("session %q has no valid refresh token configured; run 'craftmake colab auth login --session %s' first", sessionID, sessionID))
+		}
+
+		ctx := command.Context()
+		fmt.Fprintf(command.OutOrStdout(), "Checking Google Drive authorization for session %q...\n", sessionID)
+		spec := colab.RuntimeSpec{NotebookHash: colab.NotebookHash("drive-mount-" + sessionID)}
+		assignment, err := client.Assign(ctx, spec)
+		if err != nil {
+			return backendFailureError(fmt.Errorf("acquire probe runtime: %w", err))
+		}
+		defer func() {
+			_ = client.Unassign(context.Background(), assignment.Endpoint)
+		}()
+
+		probe, err := client.PropagateCredentials(ctx, assignment.Endpoint, "dfs_ephemeral", true)
+		if err != nil {
+			return backendFailureError(fmt.Errorf("check drive credentials: %w", err))
+		}
+
+		if probe.Success {
+			_, _ = client.PropagateCredentials(ctx, assignment.Endpoint, "dfs_ephemeral", false)
+			fmt.Fprintf(command.OutOrStdout(), "Google Drive is already authorized for session %q.\nRuntimes will automatically mount Drive at %s.\n", sessionID, auth.MountPath)
+			return nil
+		}
+
+		if probe.UnauthorizedRedirectURI == "" {
+			return backendFailureError(fmt.Errorf("drive authorization returned no redirect URL"))
+		}
+
+		fmt.Fprintf(command.OutOrStdout(), "\nGoogle Drive authorization required for session %q.\nOpen this URL in your browser to grant Drive access to Colab:\n%s\n\nWaiting for authorization (up to %v)...\n", sessionID, probe.UnauthorizedRedirectURI, timeout)
+		_ = openBrowser(probe.UnauthorizedRedirectURI)
+
+		deadline := time.Now().Add(timeout)
+		ticker := time.NewTicker(3 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+				if time.Now().After(deadline) {
+					return backendFailureError(fmt.Errorf("Google Drive authorization timed out after %v", timeout))
+				}
+				poll, pollErr := client.PropagateCredentials(ctx, assignment.Endpoint, "dfs_ephemeral", true)
+				if pollErr == nil && poll.Success {
+					_, _ = client.PropagateCredentials(ctx, assignment.Endpoint, "dfs_ephemeral", false)
+					fmt.Fprintf(command.OutOrStdout(), "\nGoogle Drive successfully authorized for session %q!\nFuture runs will automatically mount Google Drive at %s.\n", sessionID, auth.MountPath)
+					return nil
+				}
+			}
+		}
 	}}
 	command.Flags().StringVar(&configPath, "config", "~/.config/craftmake/colab-auth.json", "Authentication config path")
 	command.Flags().StringVar(&sessionID, "session", "", "Named Colab session")
+	command.Flags().BoolVar(&authorize, "authorize", false, "Authorize Google Drive access for this session on Google Colab")
+	command.Flags().DurationVar(&timeout, "timeout", 3*time.Minute, "How long to wait for authorization")
 	return command
 }
 

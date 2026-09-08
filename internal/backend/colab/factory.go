@@ -41,7 +41,7 @@ func NewFactory(dependencies FactoryDependencies) backendpkg.Factory {
 				control = &ServerControlPlane{Client: dependencies.Server, Spec: dependencies.RuntimeSpec}
 			}
 			if executor == nil {
-				executor = &JupyterWebSocketExecutor{SessionID: config.SessionID}
+				executor = &JupyterWebSocketExecutor{SessionID: config.SessionID, ColabClient: dependencies.Server}
 			}
 		}
 		if control == nil || executor == nil {

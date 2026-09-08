@@ -36,7 +36,7 @@ func TestJupyterStreamAccumulation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	output, err := executor.drainUntilReply(context.Background(), client, msgID)
+	output, err := executor.drainUntilReply(context.Background(), client, "sess", msgID)
 	if err != nil {
 		t.Fatal(err)
 	}
