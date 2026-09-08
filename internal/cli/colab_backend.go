@@ -76,6 +76,8 @@ func buildColabBackend(ctx context.Context, config colabBackendConfig) (backend.
 		return nil, err
 	}
 	client := colabpkg.NewColabServerClient(os.Getenv("CRAFTMAKE_COLAB_DOMAIN"), os.Getenv("CRAFTMAKE_COLAB_GAPI_DOMAIN"), nil)
+	client.AppName = "craftmake"
+	client.ExtensionVersion = "0.1.0"
 	if refreshToken, ok := resolveColabRefreshToken(auth); ok {
 		clientID := os.Getenv("CRAFTMAKE_COLAB_CLIENT_ID")
 		if clientID == "" {

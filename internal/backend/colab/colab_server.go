@@ -36,6 +36,8 @@ const (
 	HeaderTunnel        = "X-Colab-Tunnel"
 	HeaderXSRF          = "X-Goog-Colab-Token"
 	HeaderProxyToken    = "X-Colab-Runtime-Proxy-Token"
+	HeaderVSAppName     = "X-Colab-VS-Code-App-Name"
+	HeaderVSExtVersion  = "X-Colab-VS-Code-Extension-Version"
 )
 
 type RuntimeSpec struct {
@@ -76,12 +78,14 @@ type AcceleratorInfo struct {
 // implementation in googlecolab/colab-vscode. It keeps the endpoint paths,
 // header names and the GET-then-POST XSRF choreography behind one seam.
 type ColabServerClient struct {
-	ColabDomain     string
-	ColabGapiDomain string
-	Client          HTTPDoer
-	ClientAgent     string
-	GetAccessToken  func() (string, error)
-	OnAuthError     func() error
+	ColabDomain      string
+	ColabGapiDomain  string
+	Client           HTTPDoer
+	ClientAgent      string
+	AppName          string
+	ExtensionVersion string
+	GetAccessToken   func() (string, error)
+	OnAuthError      func() error
 }
 
 func NewColabServerClient(colabDomain, colabGapiDomain string, client HTTPDoer) *ColabServerClient {
@@ -114,17 +118,21 @@ func (c *ColabServerClient) Assign(ctx context.Context, spec RuntimeSpec) (Assig
 	path += "?nbh=" + url.QueryEscape(spec.NotebookHash)
 	// The Colab API requires the authuser parameter to be set (colab-vscode).
 	path += "&authuser=0"
-	variant := spec.Variant
-	if variant == "" {
-		variant = "DEFAULT"
+	// colab-vscode only sets variant when it is not DEFAULT.
+	if spec.Variant != "" && spec.Variant != "DEFAULT" {
+		path += "&variant=" + url.QueryEscape(spec.Variant)
 	}
-	path += "&variant=" + url.QueryEscape(variant)
+	// colab-vscode uses the `accelerator` param name (not `acc`).
 	if spec.Accelerator != "" {
-		path += "&acc=" + url.QueryEscape(spec.Accelerator)
+		path += "&accelerator=" + url.QueryEscape(spec.Accelerator)
 	}
-	path += fmt.Sprintf("&shape=%d", spec.Shape)
+	// colab-vscode only sets shape for high-mem (`hm`); STANDARD is omitted.
+	if spec.Shape == 1 {
+		path += "&shape=hm"
+	}
+	// colab-vscode uses the `runtime_version_label` param name (not `version`).
 	if spec.Version != "" {
-		path += "&version=" + url.QueryEscape(spec.Version)
+		path += "&runtime_version_label=" + url.QueryEscape(spec.Version)
 	}
 	var tokenResponse struct {
 		Token string `json:"token"`
@@ -224,6 +232,12 @@ func (c *ColabServerClient) do(ctx context.Context, method, base, path string, p
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set(HeaderClientAgent, c.ClientAgent)
+	if c.AppName != "" {
+		req.Header.Set(HeaderVSAppName, c.AppName)
+	}
+	if c.ExtensionVersion != "" {
+		req.Header.Set(HeaderVSExtVersion, c.ExtensionVersion)
+	}
 	if token, err := c.token(); err != nil {
 		return &RemoteError{Kind: ErrorAuthRequired, Operation: "refresh access token", Err: err}
 	} else if token != "" {

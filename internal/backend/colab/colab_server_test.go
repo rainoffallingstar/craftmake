@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -22,6 +23,58 @@ func TestNotebookHashIsWebSafeBase64SHA256(t *testing.T) {
 	}
 	if notebookHash("run-2") == h {
 		t.Fatal("different inputs should differ")
+	}
+}
+
+func TestColabServerClientAssignParamsMatchColabVSCode(t *testing.T) {
+	var assignURL string
+	var appName, extVersion string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, TunEndpoint+"/assign") {
+			assignURL = r.URL.RawQuery
+			appName = r.Header.Get(HeaderVSAppName)
+			extVersion = r.Header.Get(HeaderVSExtVersion)
+			if r.Method == http.MethodGet {
+				_ = json.NewEncoder(w).Encode(map[string]any{"token": "xsrf"})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"endpoint": "proxy.example.test", "runtimeProxyInfo": map[string]any{"token": "pt", "url": "https://proxy.example.test"}})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	client := NewColabServerClient(server.URL, server.URL, server.Client())
+	client.AppName = "craftmake"
+	client.ExtensionVersion = "0.1.0"
+	_, err := client.Assign(context.Background(), RuntimeSpec{NotebookHash: notebookHash("run-1"), Accelerator: "T4", Version: "2025.10"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, _ := url.ParseQuery(assignURL)
+	if q.Get("accelerator") != "T4" {
+		t.Fatalf("accelerator param = %q, want T4", q.Get("accelerator"))
+	}
+	if q.Get("runtime_version_label") != "2025.10" {
+		t.Fatalf("runtime_version_label = %q", q.Get("runtime_version_label"))
+	}
+	if q.Get("acc") != "" {
+		t.Fatalf("should not use acc param: %q", q.Get("acc"))
+	}
+	if q.Get("version") != "" {
+		t.Fatalf("should not use version param: %q", q.Get("version"))
+	}
+	if q.Get("variant") != "" {
+		t.Fatalf("variant should be omitted for DEFAULT: %q", q.Get("variant"))
+	}
+	if q.Get("shape") != "" {
+		t.Fatalf("shape should be omitted for STANDARD: %q", q.Get("shape"))
+	}
+	if q.Get("authuser") != "0" {
+		t.Fatalf("authuser = %q, want 0", q.Get("authuser"))
+	}
+	if appName != "craftmake" || extVersion != "0.1.0" {
+		t.Fatalf("headers: app=%q ext=%q", appName, extVersion)
 	}
 }
 
