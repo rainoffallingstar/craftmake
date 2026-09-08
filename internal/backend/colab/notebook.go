@@ -145,6 +145,17 @@ payload = {
     "exit_code": overall_exit,
     "steps": steps,
 }
+for i in range(step_count):
+    stdout_file = runtime_dir / f"step-{i}.stdout"
+    if stdout_file.exists():
+        text = stdout_file.read_text().strip()
+        if text:
+            print(f"[step-{i} stdout]\n{text}")
+    stderr_file = runtime_dir / f"step-{i}.stderr"
+    if stderr_file.exists():
+        err_text = stderr_file.read_text().strip()
+        if err_text:
+            print(f"[step-{i} stderr]\n{err_text}")
 result_path.parent.mkdir(parents=True, exist_ok=True)
 result_path.write_text(json.dumps(payload, indent=2))
 print("CRAFTMAKE_TASK_RESULT_BEGIN")

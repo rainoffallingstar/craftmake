@@ -1,0 +1,24 @@
+schema_version: craftmake.action/v1
+name: drive_hello
+backend: colab
+jobs:
+  drive_test:
+    steps:
+      - run: |
+          python3 -c "
+          import os
+          from pathlib import Path
+          print(\"=== check drive mount ===\")
+          is_mounted = os.path.ismount(\'/content/drive\')
+          print(\'is_mounted:\', is_mounted)
+          if is_mounted:
+              drive_base = Path(\'/content/drive/MyDrive\') if Path(\'/content/drive/MyDrive\').exists() else Path(\'/content/drive/My Drive\')
+              craftmake_dir = drive_base / \'craftmake\'
+              craftmake_dir.mkdir(parents=True, exist_ok=True)
+              hello_file = craftmake_dir / \'helloworld.txt\'
+              hello_file.write_text(\'helloworld\')
+              print(\'created file:\', hello_file)
+              print(\'content:\', hello_file.read_text())
+          else:
+              print(\'warning: drive not mounted\')
+          "
