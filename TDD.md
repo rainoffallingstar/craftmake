@@ -2,7 +2,7 @@
 
 > TDD 在本文中指 Technical Design Document；交付过程同时采用 Test-Driven Development 的 red → green → refactor 垂直切片。
 
-- 状态：Phase 2 complete + Colab 真实云端端到端打通（内置 Colab OAuth client + colaboratory scope + 凭据接入 + assign 协议对齐 + RFC 6455 TLS WebSocket 对接 Jupyter kernel channels + 412 TooManyAssignments 自动清理 + 真实 Google Cloud Colab 实例执行成功）
+- 状态：Phase 2 complete + Colab 真实云端端到端打通 + Google Drive 自动化挂载完成（内置 Colab OAuth client + colaboratory scope + 凭据接入 + assign 协议对齐 + RFC 6455 TLS WebSocket 对接 Jupyter kernel channels + 412 TooManyAssignments 自动清理 + credentials-propagation 凭据传播 + colab_request/input_reply 内核握手 + bootstrap 自动挂载 + colab drive mount --authorize 授权流 + 真实 Google Cloud Colab 实例执行成功）
 - 基线：craftmake Colab branch，现有 Go CLI / compiler / scheduler / backend / store 架构
 - 目标：审查已批准计划，修正与现有代码和 Colab 运行模型不一致的假设，形成可执行的设计与测试交付方案
 
