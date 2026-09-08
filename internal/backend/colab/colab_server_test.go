@@ -9,6 +9,22 @@ import (
 	"testing"
 )
 
+func TestNotebookHashIsWebSafeBase64SHA256(t *testing.T) {
+	h := notebookHash("run-1")
+	if h == "" {
+		t.Fatal("nbh empty")
+	}
+	if strings.ContainsAny(h, "+/=") {
+		t.Fatalf("nbh not web-safe: %q", h)
+	}
+	if notebookHash("run-1") != h {
+		t.Fatal("nbh not deterministic")
+	}
+	if notebookHash("run-2") == h {
+		t.Fatal("different inputs should differ")
+	}
+}
+
 func TestColabServerClientAssignKeepsAliveRefreshesAndUnassigns(t *testing.T) {
 	var xsrfSeen, authSeen string
 	colab := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

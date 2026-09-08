@@ -24,7 +24,7 @@ func (c *ServerControlPlane) AcquireRuntime(ctx context.Context, request Runtime
 	}
 	spec := c.Spec
 	if spec.NotebookHash == "" {
-		spec.NotebookHash = request.RunID
+		spec.NotebookHash = notebookHash(request.RunID)
 	}
 	assignment, err := c.Client.Assign(ctx, spec)
 	if err != nil {

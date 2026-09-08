@@ -3,6 +3,8 @@ package colab
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +12,14 @@ import (
 	"net/url"
 	"strings"
 )
+
+// notebookHash derives a valid Colab assignment notebook hash (nbh) from an
+// identifier. Colab expects a web-safe base64-encoded SHA256 digest (44 chars),
+// matching colab-vscode's uuidToWebSafeBase64.
+func notebookHash(identifier string) string {
+	sum := sha256.Sum256([]byte(identifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
 
 // Const default Colab backend domains used by the reference implementation.
 const (
@@ -101,9 +111,11 @@ func (c *ColabServerClient) Assign(ctx context.Context, spec RuntimeSpec) (Assig
 		return Assignment{}, fmt.Errorf("notebook hash is required")
 	}
 	path += "?nbh=" + url.QueryEscape(spec.NotebookHash)
-	if spec.Variant != "" {
-		path += "&variant=" + url.QueryEscape(spec.Variant)
+	variant := spec.Variant
+	if variant == "" {
+		variant = "DEFAULT"
 	}
+	path += "&variant=" + url.QueryEscape(variant)
 	if spec.Accelerator != "" {
 		path += "&acc=" + url.QueryEscape(spec.Accelerator)
 	}
