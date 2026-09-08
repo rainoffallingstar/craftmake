@@ -83,11 +83,34 @@ func (v *VariantValue) UnmarshalJSON(data []byte) error {
 
 func (v VariantValue) String() string { return string(v) }
 
+// ShapeValue accepts Colab machineShape as either an int (0, 1) or a string enum.
+type ShapeValue int
+
+func (s *ShapeValue) UnmarshalJSON(data []byte) error {
+	var n int
+	if err := json.Unmarshal(data, &n); err == nil {
+		*s = ShapeValue(n)
+		return nil
+	}
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		if strings.EqualFold(str, "HM") || strings.Contains(strings.ToUpper(str), "HIGH") {
+			*s = 1
+		} else {
+			*s = 0
+		}
+		return nil
+	}
+	return nil
+}
+
+func (s ShapeValue) Int() int { return int(s) }
+
 type Assignment struct {
 	Endpoint         string           `json:"endpoint"`
 	Accelerator      string           `json:"accelerator"`
 	Variant          VariantValue     `json:"variant"`
-	MachineShape     int              `json:"machineShape"`
+	MachineShape     ShapeValue       `json:"machineShape"`
 	RuntimeProxyInfo RuntimeProxyInfo `json:"runtimeProxyInfo"`
 	RuntimeVersion   string           `json:"runtimeVersion"`
 }

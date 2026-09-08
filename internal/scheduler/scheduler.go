@@ -176,13 +176,22 @@ func (taskScheduler *Scheduler) Run(ctx context.Context) (string, error) {
 			return runID, fmt.Errorf("backend begin run: %w", err)
 		}
 		defer func() {
-			cleanupContext, cancelCleanup := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			cleanupContext, cancelCleanup := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 			defer cancelCleanup()
 			status := "failed"
 			if persistedStatus, statusErr := taskScheduler.store.RunStatus(cleanupContext, runID); statusErr == nil && persistedStatus != "" {
 				status = persistedStatus
 			}
-			_ = lifecycle.EndRun(cleanupContext, backend.RunOutcome{RunID: runID, Status: status, ProjectDirectory: taskScheduler.options.ProjectDirectory, StateDirectory: taskScheduler.options.StateDirectory})
+			if endErr := lifecycle.EndRun(cleanupContext, backend.RunOutcome{RunID: runID, Status: status, ProjectDirectory: taskScheduler.options.ProjectDirectory, StateDirectory: taskScheduler.options.StateDirectory}); endErr != nil {
+				taskScheduler.controllerLogger.Log(cleanupContext, controllerlog.Event{
+					Timestamp: time.Now().UTC(),
+					Name:      "backend.end_run_error",
+					RunID:     runID,
+					Backend:   taskScheduler.options.Backend.Name(),
+					Status:    "warning",
+					Details:   map[string]any{"error": endErr.Error()},
+				})
+			}
 		}()
 	}
 	taskScheduler.controllerLogger.Log(ctx, controllerlog.Event{
