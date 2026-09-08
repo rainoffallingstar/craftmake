@@ -957,6 +957,8 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 	var format string
 	var legacyConfig bool
 	var gateMode bool
+	var resumeColabSession string
+	var resumeColabAuthConfig string
 	command := &cobra.Command{Use: "resume", Short: "Recover and resume a prior run using its workflow, config, and backend", RunE: func(command *cobra.Command, arguments []string) error {
 		stateStore, err := store.Open(command.Context(), statePath)
 		if err != nil {
@@ -1003,6 +1005,12 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 		switch run.Backend {
 		case "local":
 			selectedBackend = local.New()
+		case "colab":
+			colabBackend, colabErr := buildColabBackend(command.Context(), colabBackendConfig{SessionID: resumeColabSession, AuthConfig: resumeColabAuthConfig, ProjectDirectory: projectDirectory})
+			if colabErr != nil {
+				return configurationError(colabErr)
+			}
+			selectedBackend = colabBackend
 		case "slurm":
 			partition, account, qos, defaultTime, scratchRoot, resolveErr := resolveSlurmExecutionOptions(
 				command,
@@ -1132,6 +1140,8 @@ func newResumeCommand(buildInfo BuildInfo) *cobra.Command {
 	command.Flags().BoolVar(&gateMode, "gate", false, "Enforce immutable backend and Slurm resources")
 	command.Flags().BoolVar(&legacyConfig, "legacy-config", false, "Load the stored configuration through the legacy compatibility adapter")
 	_ = command.Flags().MarkHidden("legacy-config")
+	command.Flags().StringVar(&resumeColabSession, "colab-session", "", "Named Colab session used to rebuild the backend")
+	command.Flags().StringVar(&resumeColabAuthConfig, "colab-auth-config", "~/.config/craftmake/colab-auth.json", "Colab authentication config path")
 	return command
 }
 
