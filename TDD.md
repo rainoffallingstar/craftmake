@@ -2,7 +2,7 @@
 
 > TDD 在本文中指 Technical Design Document；交付过程同时采用 Test-Driven Development 的 red → green → refactor 垂直切片。
 
-- 状态：Phase 2 foundation + CLI colab wiring + cancel + Jupyter WS executor + drive path_map + mount auth hint + secret redaction + resume colab + auth login CLI implemented（action args/env/config + Colab action settings（含 path_map）+ directional workspace sync + checksum manifest + session auth CLI/backend lifecycle + backend registry + classified errors + reference-informed control-plane/OAuth + HTTP + stdlib-WebSocket Jupyter kernel executor + Drive transport + remote recovery + `run`/`action run`/`doctor`/`cancel`/`resume --backend colab` 已接线 + Colab Cancel/CancelSubmission 幂等取消 + Drive mount 未授权提示 + secret redaction + `colab auth login` loopback OAuth 已实现并通过离线聚焦测试；真实 Colab 账号执行仍受第 10 节前置条件约束）
+- 状态：Phase 2 foundation + CLI colab wiring + cancel + Jupyter WS executor + drive path_map + mount auth hint + secret redaction + resume colab + auth login CLI（内置 Colab OAuth client + colaboratory scope）implemented（action args/env/config + Colab action settings（含 path_map）+ directional workspace sync + checksum manifest + session auth CLI/backend lifecycle + backend registry + classified errors + reference-informed control-plane/OAuth + HTTP + stdlib-WebSocket Jupyter kernel executor + Drive transport + remote recovery + `run`/`action run`/`doctor`/`cancel`/`resume --backend colab` 已接线 + Colab Cancel/CancelSubmission 幂等取消 + Drive mount 未授权提示 + secret redaction + `colab auth login` loopback OAuth 已实现并通过离线聚焦测试；真实 Colab 账号执行仍受第 10 节前置条件约束）
 - 基线：craftmake Colab branch，现有 Go CLI / compiler / scheduler / backend / store 架构
 - 目标：审查已批准计划，修正与现有代码和 Colab 运行模型不一致的假设，形成可执行的设计与测试交付方案
 
