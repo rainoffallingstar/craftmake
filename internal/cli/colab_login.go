@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	colab "github.com/fallingstar10/craftmake/internal/backend/colab"
@@ -123,12 +125,26 @@ func writeCredentialFile(path, refreshToken string) error {
 	return os.WriteFile(path, []byte(refreshToken+"\n"), 0o600)
 }
 
+// BrowserOpener allows mocking or intercepting browser launch in unit tests.
+var BrowserOpener func(url string) error
+
 // openBrowser best-effort opens a URL in the default browser.
 func openBrowser(url string) error {
+	if BrowserOpener != nil {
+		return BrowserOpener(url)
+	}
+	// Never launch an external browser process inside automated test runners or headless mode.
+	if os.Getenv("CRAFTMAKE_NO_BROWSER") == "1" || isRunningInTest() {
+		return nil
+	}
 	for _, cmd := range [][]string{{"open", url}, {"xdg-open", url}, {"cmd", "/c", "start", url}} {
 		if err := exec.Command(cmd[0], cmd[1:]...).Start(); err == nil {
 			return nil
 		}
 	}
 	return fmt.Errorf("could not open browser automatically")
+}
+
+func isRunningInTest() bool {
+	return strings.HasSuffix(os.Args[0], ".test") || flag.Lookup("test.v") != nil
 }

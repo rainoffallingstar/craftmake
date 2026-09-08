@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/fallingstar10/craftmake/internal/backend"
@@ -41,17 +42,36 @@ type colabBackendConfig struct {
 // configured environment variable. The second return value reports whether a
 // token was found.
 func resolveColabRefreshToken(auth colabpkg.SessionAuth) (string, bool) {
+	// 1. Explicit credential file from session auth
 	if auth.ColabCredentialFile != "" {
-		if data, err := os.ReadFile(auth.ColabCredentialFile); err == nil {
-			if token := strings.TrimSpace(string(data)); token != "" {
-				return token, true
+		if path, err := expandUserPath(auth.ColabCredentialFile); err == nil {
+			if data, err := os.ReadFile(path); err == nil {
+				if token := strings.TrimSpace(string(data)); token != "" {
+					return token, true
+				}
 			}
 		}
 	}
-	if auth.ColabRefreshTokenEnv != "" {
-		if token := os.Getenv(auth.ColabRefreshTokenEnv); token != "" {
-			return token, true
+	// 2. Default local credential file location (~/.config/craftmake/credentials/<sessionID>.json)
+	if auth.SessionID != "" {
+		credPath := filepath.Join("~", ".config", "craftmake", "credentials", auth.SessionID+".json")
+		if defaultCredPath, err := expandUserPath(credPath); err == nil {
+			if data, readErr := os.ReadFile(defaultCredPath); readErr == nil {
+				if token := strings.TrimSpace(string(data)); token != "" {
+					return token, true
+				}
+			}
 		}
+	}
+	// 3. Environment variable specified in session auth
+	if auth.ColabRefreshTokenEnv != "" {
+		if token := os.Getenv(auth.ColabRefreshTokenEnv); strings.TrimSpace(token) != "" {
+			return strings.TrimSpace(token), true
+		}
+	}
+	// 4. Global environment variable fallback
+	if token := os.Getenv("CRAFTMAKE_COLAB_REFRESH_TOKEN"); strings.TrimSpace(token) != "" {
+		return strings.TrimSpace(token), true
 	}
 	return "", false
 }

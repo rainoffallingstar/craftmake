@@ -60,8 +60,25 @@ func TestResolveColabRefreshTokenFallsBackToEnv(t *testing.T) {
 }
 
 func TestResolveColabRefreshTokenMissing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	if _, ok := resolveColabRefreshToken(colabpkg.SessionAuth{}); ok {
 		t.Fatal("expected no token")
+	}
+}
+func TestResolveColabRefreshTokenPrioritizesLocalDefaultFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	credDir := filepath.Join(home, ".config", "craftmake", "credentials")
+	if err := os.MkdirAll(credDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(credDir, "my-session.json"), []byte("local-token-123"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	auth := colabpkg.SessionAuth{SessionID: "my-session"}
+	token, ok := resolveColabRefreshToken(auth)
+	if !ok || token != "local-token-123" {
+		t.Fatalf("token = %q ok=%v, want local-token-123", token, ok)
 	}
 }
 

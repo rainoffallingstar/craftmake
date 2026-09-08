@@ -164,3 +164,32 @@ func TestColabAuthLoginUsesBuiltinClientAndColabScope(t *testing.T) {
 		t.Fatalf("login failed: %v", err)
 	}
 }
+func TestOpenBrowserMockedInTest(t *testing.T) {
+	var openedURL string
+	orig := BrowserOpener
+	BrowserOpener = func(u string) error {
+		openedURL = u
+		return nil
+	}
+	defer func() { BrowserOpener = orig }()
+
+	err := openBrowser("https://example.com/test-auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if openedURL != "https://example.com/test-auth" {
+		t.Fatalf("openedURL = %q", openedURL)
+	}
+}
+
+func TestOpenBrowserSilentInTestingWhenUnmocked(t *testing.T) {
+	orig := BrowserOpener
+	BrowserOpener = nil
+	defer func() { BrowserOpener = orig }()
+
+	// Running inside 'go test', so openBrowser must return nil without launching browser.
+	err := openBrowser("https://example.com/silent-test")
+	if err != nil {
+		t.Fatalf("expected nil inside tests, got %v", err)
+	}
+}
