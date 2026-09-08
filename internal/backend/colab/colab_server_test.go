@@ -11,8 +11,8 @@ import (
 
 func TestNotebookHashIsWebSafeBase64SHA256(t *testing.T) {
 	h := notebookHash("run-1")
-	if h == "" {
-		t.Fatal("nbh empty")
+	if len(h) != 44 {
+		t.Fatalf("nbh length = %d, want 44 (NBH-Regex): %q", len(h), h)
 	}
 	if strings.ContainsAny(h, "+/=") {
 		t.Fatalf("nbh not web-safe: %q", h)

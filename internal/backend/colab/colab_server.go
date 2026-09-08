@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,11 +13,13 @@ import (
 )
 
 // notebookHash derives a valid Colab assignment notebook hash (nbh) from an
-// identifier. Colab expects a web-safe base64-encoded SHA256 digest (44 chars),
-// matching colab-vscode's uuidToWebSafeBase64.
+// identifier. Colab's NBH-Regex is ^[a-zA-Z0-9\-_.]{44}$; colab-vscode builds it
+// from a UUID by replacing '-' with '_' and padding with '.' to 44 chars. We
+// derive a deterministic UUID from the identifier to keep the nbh stable per run.
 func notebookHash(identifier string) string {
 	sum := sha256.Sum256([]byte(identifier))
-	return base64.RawURLEncoding.EncodeToString(sum[:])
+	uuid := fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", sum[0:4], sum[4:6], sum[6:8], sum[8:10], sum[10:16])
+	return strings.ReplaceAll(uuid, "-", "_") + strings.Repeat(".", 44-len(uuid))
 }
 
 // Const default Colab backend domains used by the reference implementation.
