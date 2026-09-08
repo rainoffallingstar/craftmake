@@ -54,10 +54,39 @@ type RuntimeProxyInfo struct {
 	URL                   string `json:"url"`
 }
 
+// VariantValue accepts the Colab variant as either a string enum (GET) or a
+// number (POST), matching colab-vscode's normalization.
+type VariantValue string
+
+func (v *VariantValue) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*v = VariantValue(s)
+		return nil
+	}
+	var n int
+	if err := json.Unmarshal(data, &n); err != nil {
+		return err
+	}
+	switch n {
+	case 0:
+		*v = "DEFAULT"
+	case 1:
+		*v = "GPU"
+	case 2:
+		*v = "TPU"
+	default:
+		*v = VariantValue(fmt.Sprintf("%d", n))
+	}
+	return nil
+}
+
+func (v VariantValue) String() string { return string(v) }
+
 type Assignment struct {
 	Endpoint         string           `json:"endpoint"`
 	Accelerator      string           `json:"accelerator"`
-	Variant          string           `json:"variant"`
+	Variant          VariantValue     `json:"variant"`
 	MachineShape     int              `json:"machineShape"`
 	RuntimeProxyInfo RuntimeProxyInfo `json:"runtimeProxyInfo"`
 	RuntimeVersion   string           `json:"runtimeVersion"`
