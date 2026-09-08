@@ -76,7 +76,7 @@ func DialWebSocket(ctx context.Context, rawURL string, client *http.Client) (*mi
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		conn.Close()
-		return nil, fmt.Errorf("websocket handshake failed: %s", resp.Status)
+		return nil, &RemoteError{Kind: ClassifyHTTPStatus(resp.StatusCode), Operation: "websocket handshake", StatusCode: resp.StatusCode, Err: fmt.Errorf("handshake failed: %s", resp.Status)}
 	}
 	if !strings.EqualFold(resp.Header.Get("Upgrade"), "websocket") {
 		conn.Close()

@@ -4,7 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -105,4 +109,27 @@ func TestJupyterExecutorInterruptActive(t *testing.T) {
 type opcodeResult struct {
 	opcode byte
 	err    error
+}
+
+// TestJupyterExecutorAuthFailure verifies a 401/403 on the WebSocket upgrade
+// is classified as ErrorAuthRequired, not a generic disconnect.
+func TestJupyterExecutorAuthFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	wsURL := "ws://" + strings.TrimPrefix(server.URL, "http://") + "/channels"
+	notebook, _ := (&Notebook{Cells: []NotebookCell{{CellType: "code", Source: "1+1"}}}).JSON()
+	executor := &JupyterWebSocketExecutor{SessionID: "s"}
+	_, err := executor.ExecuteNotebook(context.Background(), Runtime{ID: wsURL}, notebook)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var remote *RemoteError
+	if !errors.As(err, &remote) {
+		t.Fatalf("expected RemoteError, got %T", err)
+	}
+	if remote.Kind != ErrorAuthRequired {
+		t.Fatalf("expected auth-required, got %s", remote.Kind)
+	}
 }
