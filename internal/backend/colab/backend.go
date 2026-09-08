@@ -2,7 +2,9 @@ package colab
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -226,7 +228,7 @@ func (b *Backend) RunSubmission(ctx context.Context, submissionID string, reques
 			result.Tasks[manifest.TaskID] = backend.TaskOutcome{Err: RedactError(b.Redactor, fmt.Errorf("%w; raw kernel output: %q", err, output))}
 			continue
 		}
-		if err := b.materializeTaskLogs(ctx, taskResult, manifest, mapping); err != nil {
+		if err := b.materializeTaskLogs(ctx, taskResult, manifest, mapping, output); err != nil {
 			taskResult.ObservabilityErrors = append(taskResult.ObservabilityErrors, err.Error())
 		}
 		result.Tasks[manifest.TaskID] = backend.TaskOutcome{Result: &backend.Result{TaskResult: taskResult, BackendID: "colab:" + manifest.TaskID}}
@@ -234,10 +236,7 @@ func (b *Backend) RunSubmission(ctx context.Context, submissionID string, reques
 	return result, nil
 }
 
-func (b *Backend) materializeTaskLogs(ctx context.Context, taskResult *protocol.TaskResult, manifest *protocol.TaskManifest, mapping RemoteTaskMapping) error {
-	if b.Materializer == nil {
-		return nil
-	}
+func (b *Backend) materializeTaskLogs(ctx context.Context, taskResult *protocol.TaskResult, manifest *protocol.TaskManifest, mapping RemoteTaskMapping, output string) error {
 	var failures []string
 	for _, step := range taskResult.Steps {
 		if step.Index < 0 || step.Index >= len(manifest.Steps) {
@@ -260,18 +259,54 @@ func (b *Backend) materializeTaskLogs(ctx context.Context, taskResult *protocol.
 		if localStderr == "" {
 			localStderr = filepath.Join(manifest.RuntimeDirectory, fmt.Sprintf("step-%d.stderr", step.Index))
 		}
-		if err := b.Materializer.Materialize(ctx, remoteStdout, localStdout); err != nil {
-			failures = append(failures, fmt.Sprintf("stdout step %d: %v", step.Index, err))
-		}
-		if err := b.Materializer.Materialize(ctx, remoteStderr, localStderr); err != nil {
-			failures = append(failures, fmt.Sprintf("stderr step %d: %v", step.Index, err))
+		if b.Materializer != nil {
+			if err := b.Materializer.Materialize(ctx, remoteStdout, localStdout); err != nil {
+				failures = append(failures, fmt.Sprintf("stdout step %d: %v", step.Index, err))
+			}
+			if err := b.Materializer.Materialize(ctx, remoteStderr, localStderr); err != nil {
+				failures = append(failures, fmt.Sprintf("stderr step %d: %v", step.Index, err))
+			}
+		} else {
+			outText := extractStepLog(output, fmt.Sprintf("[step-%d stdout]", step.Index))
+			if outText != "" && localStdout != "" {
+				_ = os.MkdirAll(filepath.Dir(localStdout), 0o755)
+				_ = os.WriteFile(localStdout, []byte(outText+"\n"), 0o644)
+			}
+			errText := extractStepLog(output, fmt.Sprintf("[step-%d stderr]", step.Index))
+			if errText != "" && localStderr != "" {
+				_ = os.MkdirAll(filepath.Dir(localStderr), 0o755)
+				_ = os.WriteFile(localStderr, []byte(errText+"\n"), 0o644)
+			}
 		}
 		step.StdoutPath, step.StderrPath = localStdout, localStderr
+	}
+	if manifest.ResultPath != "" {
+		_ = os.MkdirAll(filepath.Dir(manifest.ResultPath), 0o755)
+		if data, err := json.MarshalIndent(taskResult, "", "  "); err == nil {
+			_ = os.WriteFile(manifest.ResultPath, data, 0o644)
+		}
 	}
 	if len(failures) > 0 {
 		return fmt.Errorf("materialize Colab logs: %s", strings.Join(failures, "; "))
 	}
 	return nil
+}
+
+func extractStepLog(output, header string) string {
+	idx := strings.Index(output, header+"\n")
+	if idx < 0 {
+		return ""
+	}
+	start := idx + len(header) + 1
+	rest := output[start:]
+	end := strings.Index(rest, "\n[step-")
+	if end < 0 {
+		end = strings.Index(rest, "\nCRAFTMAKE_TASK_RESULT_BEGIN")
+	}
+	if end >= 0 {
+		return rest[:end]
+	}
+	return strings.TrimSpace(rest)
 }
 
 func (b *Backend) remoteRoot() string {

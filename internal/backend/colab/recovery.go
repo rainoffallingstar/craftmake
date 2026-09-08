@@ -52,7 +52,7 @@ func (b *Backend) RecoverSubmission(ctx context.Context, request backend.Recover
 			continue
 		}
 		if b.Materializer != nil {
-			if err := b.materializeTaskLogs(ctx, taskResult, manifest, mapping); err != nil {
+			if err := b.materializeTaskLogs(ctx, taskResult, manifest, mapping, ""); err != nil {
 				taskResult.ObservabilityErrors = append(taskResult.ObservabilityErrors, err.Error())
 			}
 		}
