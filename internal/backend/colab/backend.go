@@ -269,8 +269,6 @@ func (b *Backend) materializeTaskLogs(ctx context.Context, taskResult *protocol.
 	return nil
 }
 
-func (b *Backend) CancelSubmission(context.Context, string, map[string]any) error { return nil }
-func (b *Backend) Cancel(context.Context) error                                   { return nil }
 func (b *Backend) remoteRoot() string {
 	if b.Config.DriveRoot != "" {
 		return b.Config.DriveRoot

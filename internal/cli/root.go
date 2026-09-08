@@ -431,6 +431,8 @@ func newCancelCommand() *cobra.Command {
 	var statePath string
 	var runID string
 	var format string
+	var cancelColabSession string
+	var cancelColabAuthConfig string
 	command := &cobra.Command{Use: "cancel", Short: "Cancel a running workflow", RunE: func(command *cobra.Command, arguments []string) error {
 		stateStore, err := store.Open(command.Context(), statePath)
 		if err != nil {
@@ -450,7 +452,7 @@ func newCancelCommand() *cobra.Command {
 		if run.Status != "running" {
 			return usageError("run %s is not running (status: %s)", runID, run.Status)
 		}
-		selectedBackend, err := backendForName(run.Backend)
+		selectedBackend, err := backendForNameWithColab(command.Context(), run.Backend, colabBackendConfig{SessionID: cancelColabSession, AuthConfig: cancelColabAuthConfig, ProjectDirectory: filepath.Dir(run.ConfigPath)})
 		if err != nil {
 			return err
 		}
@@ -570,6 +572,8 @@ func newCancelCommand() *cobra.Command {
 	command.Flags().StringVar(&statePath, "state", "workflow/.craftmake/state.sqlite", "State database path")
 	command.Flags().StringVar(&runID, "run", "latest", "Run identifier")
 	command.Flags().StringVar(&format, "format", "text", "Output format (text/json/jsonl)")
+	command.Flags().StringVar(&cancelColabSession, "colab-session", "", "Named Colab session used to rebuild the backend")
+	command.Flags().StringVar(&cancelColabAuthConfig, "colab-auth-config", "~/.config/craftmake/colab-auth.json", "Colab authentication config path")
 	return command
 }
 

@@ -7,7 +7,25 @@ import (
 
 	"github.com/fallingstar10/craftmake/internal/backend"
 	colabpkg "github.com/fallingstar10/craftmake/internal/backend/colab"
+	"github.com/fallingstar10/craftmake/internal/backend/local"
+	"github.com/fallingstar10/craftmake/internal/backend/slurm"
 )
+
+// backendForNameWithColab resolves a backend by name for persistable run
+// operations (for example cancel), building a Colab backend from the supplied
+// session configuration when the persisted backend is "colab".
+func backendForNameWithColab(ctx context.Context, backendName string, config colabBackendConfig) (backend.Backend, error) {
+	switch backendName {
+	case "local":
+		return local.New(), nil
+	case "slurm":
+		return slurm.New(), nil
+	case "colab":
+		return buildColabBackend(ctx, config)
+	default:
+		return nil, fmt.Errorf("unsupported backend %q", backendName)
+	}
+}
 
 // colabBackendConfig carries the flags needed to build a Colab backend from a
 // configured session.
