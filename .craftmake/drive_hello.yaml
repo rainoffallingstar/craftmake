@@ -6,19 +6,26 @@ jobs:
     steps:
       - run: |
           python3 -c "
-          import os
+          import os, sys
           from pathlib import Path
-          print(\"=== check drive mount ===\")
+          print(\"=== 挂载 Google Drive ===\")
+          if not os.path.ismount(\'/content/drive\'):
+              try:
+                  from google.colab import drive
+                  drive.mount(\'/content/drive\', force_remount=False)
+                  print(\'drive.mount executed successfully\')
+              except Exception as e:
+                  print(\'drive.mount failed:\', e, file=sys.stderr)
           is_mounted = os.path.ismount(\'/content/drive\')
           print(\'is_mounted:\', is_mounted)
-          if is_mounted:
-              drive_base = Path(\'/content/drive/MyDrive\') if Path(\'/content/drive/MyDrive\').exists() else Path(\'/content/drive/My Drive\')
-              craftmake_dir = drive_base / \'craftmake\'
-              craftmake_dir.mkdir(parents=True, exist_ok=True)
-              hello_file = craftmake_dir / \'helloworld.txt\'
-              hello_file.write_text(\'helloworld\')
-              print(\'created file:\', hello_file)
-              print(\'content:\', hello_file.read_text())
-          else:
-              print(\'warning: drive not mounted\')
+          if not is_mounted:
+              sys.exit(\'Error: /content/drive is not mounted\')
+          drive_base = Path(\'/content/drive/MyDrive\') if Path(\'/content/drive/MyDrive\').exists() else Path(\'/content/drive/My Drive\')
+          craftmake_dir = drive_base / \'craftmake\'
+          craftmake_dir.mkdir(parents=True, exist_ok=True)
+          hello_file = craftmake_dir / \'helloworld.txt\'
+          hello_file.write_text(\'helloworld from craftmake colab!\n\')
+          print(\'Successfully created directory:\', craftmake_dir)
+          print(\'Successfully created file:\', hello_file)
+          print(\'File content:\', hello_file.read_text().strip())
           "

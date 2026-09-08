@@ -80,11 +80,12 @@ func jupyterVerify(key string, msg jupyterMsg) bool {
 // TaskResult decoder can find the sentinel. HMACKey, when set, is used to sign
 // outbound messages and verify inbound ones.
 type JupyterWebSocketExecutor struct {
-	SessionID   string
-	Client      *http.Client
-	HMACKey     string
-	ColabClient *ColabServerClient
-	Endpoint    string
+	SessionID          string
+	Client             *http.Client
+	HMACKey            string
+	ColabClient        *ColabServerClient
+	Endpoint           string
+	AuthConsentHandler func(ctx context.Context, authType, redirectURI string) error
 
 	mu     sync.Mutex
 	active *minimalWSConn
@@ -168,7 +169,7 @@ func (e *JupyterWebSocketExecutor) ExecuteNotebook(ctx context.Context, runtime 
 func (e *JupyterWebSocketExecutor) sendExecuteRequest(conn *minimalWSConn, session, code string) (string, error) {
 	msgID := uuid.NewString()
 	header := jupyterHeader{MsgID: msgID, Session: session, Username: "craftmake", Date: time.Now().UTC().Format(time.RFC3339Nano), MsgType: "execute_request", Version: "5.3"}
-	content := map[string]any{"code": code, "silent": false, "store_history": true, "user_expressions": map[string]any{}, "allow_stdin": false, "stop_on_error": false}
+	content := map[string]any{"code": code, "silent": false, "store_history": true, "user_expressions": map[string]any{}, "allow_stdin": true, "stop_on_error": false}
 	msg := jupyterMsg{Header: header, ParentHeader: json.RawMessage("{}"), Metadata: map[string]any{}, Content: content, Channel: "shell"}
 	msg.Signature = jupyterSign(e.HMACKey, content)
 	data, err := json.Marshal(msg)
@@ -208,7 +209,6 @@ func (e *JupyterWebSocketExecutor) drainUntilReply(ctx context.Context, conn *mi
 			if content, ok := msg.Content.(map[string]any); ok {
 				writeContentText(&output, content, "text")
 			}
-		case "display_data":
 			if content, ok := msg.Content.(map[string]any); ok {
 				if data, ok := content["data"].(map[string]any); ok {
 					writeContentText(&output, data, "text/plain")
@@ -241,7 +241,22 @@ func (e *JupyterWebSocketExecutor) handleColabRequest(ctx context.Context, conn 
 	}
 	var propErr error
 	if e.ColabClient != nil && e.Endpoint != "" {
-		_, propErr = e.ColabClient.PropagateCredentials(ctx, e.Endpoint, authType, false)
+		dryRes, err := e.ColabClient.PropagateCredentials(ctx, e.Endpoint, authType, true)
+		if err == nil && dryRes.Success {
+			_, propErr = e.ColabClient.PropagateCredentials(ctx, e.Endpoint, authType, false)
+		} else if err == nil && dryRes.UnauthorizedRedirectURI != "" {
+			if e.AuthConsentHandler != nil {
+				if consentErr := e.AuthConsentHandler(ctx, authType, dryRes.UnauthorizedRedirectURI); consentErr == nil {
+					_, propErr = e.ColabClient.PropagateCredentials(ctx, e.Endpoint, authType, false)
+				} else {
+					propErr = consentErr
+				}
+			} else {
+				propErr = fmt.Errorf("authorization consent required for %s: %s", authType, dryRes.UnauthorizedRedirectURI)
+			}
+		} else {
+			propErr = err
+		}
 	}
 	val := map[string]any{
 		"type":         "colab_reply",

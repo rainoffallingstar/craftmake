@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/fallingstar10/craftmake/internal/backend"
 	colabpkg "github.com/fallingstar10/craftmake/internal/backend/colab"
@@ -111,8 +112,33 @@ func buildColabBackend(ctx context.Context, config colabBackendConfig) (backend.
 		manager.SetRefreshToken(refreshToken)
 		client.GetAccessToken = func() (string, error) { return manager.AccessToken(context.Background()) }
 	}
+	executor := &colabpkg.JupyterWebSocketExecutor{
+		SessionID:   config.SessionID,
+		ColabClient: client,
+		AuthConsentHandler: func(ctx context.Context, authType, redirectURI string) error {
+			fmt.Printf("\n[Colab] Google Drive authorization required for this runtime.\nOpen this URL in your browser to grant Drive access to Colab:\n%s\n\nWaiting for authorization (press Enter once authorized in browser)...\n", redirectURI)
+			_ = openBrowser(redirectURI)
+
+			enterCh := make(chan struct{}, 1)
+			go func() {
+				var buf [1]byte
+				_, _ = os.Stdin.Read(buf[:])
+				enterCh <- struct{}{}
+			}()
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-enterCh:
+				return nil
+			case <-time.After(3 * time.Minute):
+				return fmt.Errorf("authorization timed out after 3 minutes")
+			}
+		},
+	}
 	factory := colabpkg.NewFactory(colabpkg.FactoryDependencies{
 		Server:         client,
+		Executor:       executor,
 		MountPreflight: colabpkg.NoopMountPreflight{},
 	})
 	return factory(ctx, backend.FactoryConfig{

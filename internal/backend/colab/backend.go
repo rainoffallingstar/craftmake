@@ -93,6 +93,7 @@ func (b *Backend) BeginRun(ctx context.Context, run backend.RunContext) error {
 		}
 	}
 	b.mutex.Lock()
+	b.Config = config
 	if b.active {
 		b.mutex.Unlock()
 		return fmt.Errorf("colab runtime is already active")
