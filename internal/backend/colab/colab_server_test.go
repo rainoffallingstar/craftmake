@@ -26,6 +26,15 @@ func TestNotebookHashIsWebSafeBase64SHA256(t *testing.T) {
 	}
 }
 
+func TestStripXSSIRemovesColabPrefix(t *testing.T) {
+	if got := string(stripXSSI([]byte(")]}'\n{\"a\":1}"))); got != "{\"a\":1}" {
+		t.Fatalf("stripXSSI = %q", got)
+	}
+	if got := string(stripXSSI([]byte("{\"a\":1}"))); got != "{\"a\":1}" {
+		t.Fatalf("stripXSSI no-prefix = %q", got)
+	}
+}
+
 func TestColabServerClientAssignParamsMatchColabVSCode(t *testing.T) {
 	var assignURL string
 	var appName, extVersion string

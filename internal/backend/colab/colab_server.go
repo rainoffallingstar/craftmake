@@ -254,10 +254,25 @@ func (c *ColabServerClient) do(ctx context.Context, method, base, path string, p
 	if result == nil {
 		return nil
 	}
-	if err := json.NewDecoder(response.Body).Decode(result); err != nil {
+	respBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		return &RemoteError{Kind: ErrorTransferFailed, Operation: "read Colab response", Err: err}
+	}
+	// Colab responses carry an XSSI prefix (colab-vscode fetch-utils strips it).
+	respBody = stripXSSI(respBody)
+	if err := json.Unmarshal(respBody, result); err != nil {
 		return &RemoteError{Kind: ErrorProtocolMismatch, Operation: "decode Colab response", Err: err}
 	}
 	return nil
+}
+
+// stripXSSI removes the Colab XSSI prefix ")]}'\n" from a response body.
+func stripXSSI(body []byte) []byte {
+	const prefix = ")]}'\n"
+	if len(body) >= len(prefix) && string(body[:len(prefix)]) == prefix {
+		return body[len(prefix):]
+	}
+	return body
 }
 
 func (c *ColabServerClient) roundTrip(req *http.Request) (*http.Response, error) {
