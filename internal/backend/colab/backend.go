@@ -15,7 +15,10 @@ type RuntimeRequest struct {
 	RunID  string
 	Region string
 }
-type Runtime struct{ ID string }
+type Runtime struct {
+	ID       string
+	ProxyURL string
+}
 
 type ControlPlane interface {
 	AcquireRuntime(context.Context, RuntimeRequest) (Runtime, error)

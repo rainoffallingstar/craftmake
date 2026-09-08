@@ -30,7 +30,7 @@ func (c *ServerControlPlane) AcquireRuntime(ctx context.Context, request Runtime
 	if err != nil {
 		return Runtime{}, err
 	}
-	return Runtime{ID: assignment.Endpoint}, nil
+	return Runtime{ID: assignment.Endpoint, ProxyURL: assignment.RuntimeProxyInfo.URL}, nil
 }
 
 func (c *ServerControlPlane) ReleaseRuntime(ctx context.Context, runtime Runtime) error {
@@ -48,10 +48,14 @@ type ProxyNotebookExecutor struct {
 }
 
 func (e *ProxyNotebookExecutor) ExecuteNotebook(ctx context.Context, runtime Runtime, notebook []byte) (string, error) {
-	if runtime.ID == "" {
+	proxyURL := runtime.ProxyURL
+	if proxyURL == "" {
+		proxyURL = runtime.ID
+	}
+	if proxyURL == "" {
 		return "", fmt.Errorf("runtime proxy endpoint is required")
 	}
-	target, err := url.Parse(runtime.ID)
+	target, err := url.Parse(proxyURL)
 	if err != nil {
 		return "", &RemoteError{Kind: ErrorProtocolMismatch, Operation: "parse proxy URL", Err: err}
 	}
