@@ -77,7 +77,15 @@ func buildColabBackend(ctx context.Context, config colabBackendConfig) (backend.
 	}
 	client := colabpkg.NewColabServerClient(os.Getenv("CRAFTMAKE_COLAB_DOMAIN"), os.Getenv("CRAFTMAKE_COLAB_GAPI_DOMAIN"), nil)
 	if refreshToken, ok := resolveColabRefreshToken(auth); ok {
-		manager := &colabpkg.TokenManager{}
+		clientID := os.Getenv("CRAFTMAKE_COLAB_CLIENT_ID")
+		if clientID == "" {
+			clientID = defaultColabClientID
+		}
+		clientSecret := os.Getenv("CRAFTMAKE_COLAB_CLIENT_SECRET")
+		if clientSecret == "" {
+			clientSecret = defaultColabClientSecret
+		}
+		manager := &colabpkg.TokenManager{Config: colabpkg.TokenConfig{ClientID: clientID, ClientSecret: clientSecret, TokenURL: os.Getenv("CRAFTMAKE_COLAB_TOKEN_URL")}}
 		manager.SetRefreshToken(refreshToken)
 		client.GetAccessToken = func() (string, error) { return manager.AccessToken(context.Background()) }
 	}
