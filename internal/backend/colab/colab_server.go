@@ -230,6 +230,17 @@ func (c *ColabServerClient) RefreshProxy(ctx context.Context, endpoint string) (
 	return token, nil
 }
 
+// ListAssignments lists all active runtime assignments on the user's Colab account.
+func (c *ColabServerClient) ListAssignments(ctx context.Context) ([]Assignment, error) {
+	var resp struct {
+		Assignments []Assignment `json:"assignments"`
+	}
+	if err := c.do(ctx, http.MethodGet, c.ColabGapiDomain, "/v1/assignments", nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Assignments, nil
+}
+
 // GetUserInfo returns the current user's tier and accelerator eligibility.
 func (c *ColabServerClient) GetUserInfo(ctx context.Context) (UserInfo, error) {
 	var info UserInfo
@@ -244,6 +255,16 @@ func (c *ColabServerClient) tunPath(suffix string) string {
 }
 
 func (c *ColabServerClient) do(ctx context.Context, method, base, path string, payload any, result any, xsrf ...string) error {
+	fullPath := path
+	if base == c.ColabDomain {
+		if strings.Contains(fullPath, "?") {
+			if !strings.Contains(fullPath, "authuser=") {
+				fullPath += "&authuser=0"
+			}
+		} else {
+			fullPath += "?authuser=0"
+		}
+	}
 	var body io.Reader
 	if payload != nil {
 		data, err := json.Marshal(payload)
@@ -252,7 +273,7 @@ func (c *ColabServerClient) do(ctx context.Context, method, base, path string, p
 		}
 		body = bytes.NewReader(data)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, base+path, body)
+	req, err := http.NewRequestWithContext(ctx, method, base+fullPath, body)
 	if err != nil {
 		return err
 	}

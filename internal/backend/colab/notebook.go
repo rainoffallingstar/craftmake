@@ -87,8 +87,44 @@ func bashSource(step protocol.StepManifest, mapping RemoteTaskMapping) string {
 }
 
 func finalizerSource(manifest *protocol.TaskManifest, mapping RemoteTaskMapping) string {
-	payload := fmt.Sprintf(`payload = {"protocol_version": %d, "run_id": %s, "task_id": %s, "attempt": %d, "status": "succeeded", "steps": []}`, protocol.Version, pythonString(manifest.RunID), pythonString(manifest.TaskID), manifest.Attempt)
-	return strings.Join([]string{"import json", "from pathlib import Path", "result_path = Path(" + pythonString(mapping.ResultPath) + ")", payload, "result_path.write_text(json.dumps(payload)+\"\n\")", `print("CRAFTMAKE_TASK_RESULT_BEGIN")`, "print(json.dumps(payload, sort_keys=True))", `print("CRAFTMAKE_TASK_RESULT_END")`}, "\n") + "\n"
+	stepCount := len(manifest.Steps)
+	return fmt.Sprintf(`import json
+from pathlib import Path
+
+runtime_dir = Path(%s)
+result_path = Path(%s)
+step_count = %d
+
+steps = []
+overall_exit = 0
+for i in range(step_count):
+    exit_file = runtime_dir / f"step-{i}.exit"
+    code = int(exit_file.read_text().strip()) if exit_file.exists() else 0
+    if code != 0 and overall_exit == 0:
+        overall_exit = code
+    steps.append({
+        "index": i,
+        "status": "succeeded" if code == 0 else "failed",
+        "exit_code": code,
+        "stdout_path": str(runtime_dir / f"step-{i}.stdout"),
+        "stderr_path": str(runtime_dir / f"step-{i}.stderr"),
+    })
+
+payload = {
+    "protocol_version": %d,
+    "run_id": %s,
+    "task_id": %s,
+    "attempt": %d,
+    "status": "succeeded" if overall_exit == 0 else "failed",
+    "exit_code": overall_exit,
+    "steps": steps,
+}
+result_path.parent.mkdir(parents=True, exist_ok=True)
+result_path.write_text(json.dumps(payload, indent=2))
+print("CRAFTMAKE_TASK_RESULT_BEGIN")
+print(json.dumps(payload, sort_keys=True))
+print("CRAFTMAKE_TASK_RESULT_END")
+`, pythonString(mapping.RuntimeDirectory), pythonString(mapping.ResultPath), stepCount, protocol.Version, pythonString(manifest.RunID), pythonString(manifest.TaskID), manifest.Attempt)
 }
 
 func pythonString(value string) string { encoded, _ := json.Marshal(value); return string(encoded) }

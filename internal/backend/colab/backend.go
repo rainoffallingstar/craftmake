@@ -16,8 +16,9 @@ type RuntimeRequest struct {
 	Region string
 }
 type Runtime struct {
-	ID       string
-	ProxyURL string
+	ID         string
+	ProxyURL   string
+	ProxyToken string
 }
 
 type ControlPlane interface {
@@ -222,7 +223,7 @@ func (b *Backend) RunSubmission(ctx context.Context, submissionID string, reques
 		}
 		taskResult, err := DecodeTaskResult(output)
 		if err != nil {
-			result.Tasks[manifest.TaskID] = backend.TaskOutcome{Err: RedactError(b.Redactor, err)}
+			result.Tasks[manifest.TaskID] = backend.TaskOutcome{Err: RedactError(b.Redactor, fmt.Errorf("%w; raw kernel output: %q", err, output))}
 			continue
 		}
 		if err := b.materializeTaskLogs(ctx, taskResult, manifest, mapping); err != nil {

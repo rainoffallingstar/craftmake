@@ -28,9 +28,20 @@ func (c *ServerControlPlane) AcquireRuntime(ctx context.Context, request Runtime
 	}
 	assignment, err := c.Client.Assign(ctx, spec)
 	if err != nil {
-		return Runtime{}, err
+		if remote, ok := err.(*RemoteError); ok && remote.StatusCode == http.StatusPreconditionFailed {
+			// Auto-clean dangling assignments on Colab 412 (TooManyAssignmentsError)
+			if assignments, listErr := c.Client.ListAssignments(ctx); listErr == nil && len(assignments) > 0 {
+				for _, a := range assignments {
+					_ = c.Client.Unassign(ctx, a.Endpoint)
+				}
+				assignment, err = c.Client.Assign(ctx, spec)
+			}
+		}
+		if err != nil {
+			return Runtime{}, err
+		}
 	}
-	return Runtime{ID: assignment.Endpoint, ProxyURL: assignment.RuntimeProxyInfo.URL}, nil
+	return Runtime{ID: assignment.Endpoint, ProxyURL: assignment.RuntimeProxyInfo.URL, ProxyToken: assignment.RuntimeProxyInfo.Token}, nil
 }
 
 func (c *ServerControlPlane) ReleaseRuntime(ctx context.Context, runtime Runtime) error {

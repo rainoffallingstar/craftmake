@@ -41,7 +41,7 @@ func NewFactory(dependencies FactoryDependencies) backendpkg.Factory {
 				control = &ServerControlPlane{Client: dependencies.Server, Spec: dependencies.RuntimeSpec}
 			}
 			if executor == nil {
-				executor = &ProxyNotebookExecutor{BearerToken: dependencies.ProxyToken}
+				executor = &JupyterWebSocketExecutor{SessionID: config.SessionID}
 			}
 		}
 		if control == nil || executor == nil {

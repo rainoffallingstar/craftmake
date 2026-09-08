@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha1"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -31,6 +32,12 @@ type minimalWSConn struct {
 // DialWebSocket performs the RFC 6455 client handshake over an existing TCP
 // connection using a minimal manual implementation.
 func DialWebSocket(ctx context.Context, rawURL string, client *http.Client) (*minimalWSConn, error) {
+	return DialWebSocketWithHeaders(ctx, rawURL, nil, client)
+}
+
+// DialWebSocketWithHeaders performs the RFC 6455 client handshake with extra HTTP headers
+// and transparent TLS for wss:// schemes.
+func DialWebSocketWithHeaders(ctx context.Context, rawURL string, headers map[string]string, client *http.Client) (*minimalWSConn, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse websocket url: %w", err)
@@ -50,6 +57,16 @@ func DialWebSocket(ctx context.Context, rawURL string, client *http.Client) (*mi
 	if err != nil {
 		return nil, fmt.Errorf("dial websocket: %w", err)
 	}
+	if parsed.Scheme == "wss" {
+		tlsConn := tls.Client(conn, &tls.Config{
+			ServerName: parsed.Hostname(),
+		})
+		if err := tlsConn.HandshakeContext(ctx); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("tls handshake: %w", err)
+		}
+		conn = tlsConn
+	}
 	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
 
 	keyBytes := make([]byte, 16)
@@ -62,7 +79,11 @@ func DialWebSocket(ctx context.Context, rawURL string, client *http.Client) (*mi
 	if path == "" {
 		path = "/"
 	}
-	req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n", path, host, key)
+	req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n", path, host, key)
+	for k, v := range headers {
+		req += fmt.Sprintf("%s: %s\r\n", k, v)
+	}
+	req += "\r\n"
 	if _, err := io.WriteString(conn, req); err != nil {
 		conn.Close()
 		return nil, err

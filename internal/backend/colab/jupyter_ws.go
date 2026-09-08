@@ -1,13 +1,16 @@
 package colab
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -98,9 +101,6 @@ func (e *JupyterWebSocketExecutor) Interrupt(_ context.Context, _ Runtime) error
 }
 
 func (e *JupyterWebSocketExecutor) ExecuteNotebook(ctx context.Context, runtime Runtime, notebook []byte) (string, error) {
-	if runtime.ID == "" {
-		return "", fmt.Errorf("Jupyter channels WebSocket URL is required")
-	}
 	var nb Notebook
 	if err := json.Unmarshal(notebook, &nb); err != nil {
 		return "", fmt.Errorf("decode notebook: %w", err)
@@ -109,7 +109,27 @@ func (e *JupyterWebSocketExecutor) ExecuteNotebook(ctx context.Context, runtime 
 	if session == "" {
 		session = "craftmake"
 	}
-	conn, err := DialWebSocket(ctx, runtime.ID, e.Client)
+
+	targetWS := runtime.ID
+	headers := map[string]string{}
+	if runtime.ProxyToken != "" {
+		headers[HeaderProxyToken] = runtime.ProxyToken
+		headers[HeaderClientAgent] = "vscode"
+	}
+
+	if runtime.ProxyURL != "" && (strings.HasPrefix(runtime.ProxyURL, "http://") || strings.HasPrefix(runtime.ProxyURL, "https://")) {
+		kernelID, err := e.resolveKernel(ctx, runtime.ProxyURL, runtime.ProxyToken)
+		if err != nil {
+			return "", &RemoteError{Kind: ErrorKernelDisconnected, Operation: "resolve kernel", Err: err}
+		}
+		targetWS = formatChannelsWSURL(runtime.ProxyURL, kernelID, session)
+	}
+
+	if targetWS == "" {
+		return "", fmt.Errorf("Jupyter channels WebSocket URL is required")
+	}
+
+	conn, err := DialWebSocketWithHeaders(ctx, targetWS, headers, e.Client)
 	if err != nil {
 		return "", classifyDialError(err)
 	}
@@ -214,6 +234,102 @@ func writeErrorTraceback(output *strings.Builder, content map[string]any) {
 			}
 		}
 	}
+}
+
+func (e *JupyterWebSocketExecutor) resolveKernel(ctx context.Context, proxyURL, proxyToken string) (string, error) {
+	client := e.Client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	reqURL := strings.TrimRight(proxyURL, "/") + "/api/kernels"
+
+	// 1. Try GET <proxyURL>/api/kernels
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err == nil {
+		req.Header.Set(HeaderProxyToken, proxyToken)
+		req.Header.Set(HeaderClientAgent, "vscode")
+		req.Header.Set("Accept", "application/json")
+		resp, err := client.Do(req)
+		if err == nil {
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				var kernels []struct {
+					ID string `json:"id"`
+				}
+				if jsonErr := json.NewDecoder(resp.Body).Decode(&kernels); jsonErr == nil && len(kernels) > 0 && kernels[0].ID != "" {
+					return kernels[0].ID, nil
+				}
+			}
+		}
+	}
+
+	// 2. Try POST <proxyURL>/api/sessions
+	sessURL := strings.TrimRight(proxyURL, "/") + "/api/sessions"
+	sessPayload := map[string]any{
+		"name":   "craftmake",
+		"path":   "/craftmake",
+		"type":   "notebook",
+		"kernel": map[string]string{"name": "python3"},
+	}
+	data, _ := json.Marshal(sessPayload)
+	sessReq, err := http.NewRequestWithContext(ctx, http.MethodPost, sessURL, bytes.NewReader(data))
+	if err == nil {
+		sessReq.Header.Set(HeaderProxyToken, proxyToken)
+		sessReq.Header.Set(HeaderClientAgent, "vscode")
+		sessReq.Header.Set("Content-Type", "application/json")
+		sessReq.Header.Set("Accept", "application/json")
+		sessResp, err := client.Do(sessReq)
+		if err == nil {
+			defer sessResp.Body.Close()
+			if sessResp.StatusCode == http.StatusOK || sessResp.StatusCode == http.StatusCreated {
+				var sessionInfo struct {
+					Kernel struct {
+						ID string `json:"id"`
+					} `json:"kernel"`
+				}
+				if jsonErr := json.NewDecoder(sessResp.Body).Decode(&sessionInfo); jsonErr == nil && sessionInfo.Kernel.ID != "" {
+					return sessionInfo.Kernel.ID, nil
+				}
+			}
+		}
+	}
+
+	// 3. Fallback: try POST <proxyURL>/api/kernels
+	kernReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader([]byte(`{"name":"python3"}`)))
+	if err != nil {
+		return "", err
+	}
+	kernReq.Header.Set(HeaderProxyToken, proxyToken)
+	kernReq.Header.Set(HeaderClientAgent, "vscode")
+	kernReq.Header.Set("Content-Type", "application/json")
+	kernReq.Header.Set("Accept", "application/json")
+
+	kernResp, err := client.Do(kernReq)
+	if err != nil {
+		return "", fmt.Errorf("create kernel on proxy %q: %w", proxyURL, err)
+	}
+	defer kernResp.Body.Close()
+	if kernResp.StatusCode < 200 || kernResp.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(kernResp.Body, 512))
+		return "", fmt.Errorf("create kernel HTTP %d: %s", kernResp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(kernResp.Body).Decode(&created); err != nil || created.ID == "" {
+		return "", fmt.Errorf("decode created kernel response: %w", err)
+	}
+	return created.ID, nil
+}
+
+func formatChannelsWSURL(proxyURL, kernelID, sessionID string) string {
+	wsURL := strings.TrimRight(proxyURL, "/")
+	if strings.HasPrefix(wsURL, "https://") {
+		wsURL = "wss://" + strings.TrimPrefix(wsURL, "https://")
+	} else if strings.HasPrefix(wsURL, "http://") {
+		wsURL = "ws://" + strings.TrimPrefix(wsURL, "http://")
+	}
+	return fmt.Sprintf("%s/api/kernels/%s/channels?session_id=%s", wsURL, url.PathEscape(kernelID), url.QueryEscape(sessionID))
 }
 
 // classifyDialError maps a handshake failure to a classified RemoteError. An

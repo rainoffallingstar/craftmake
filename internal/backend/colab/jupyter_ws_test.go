@@ -133,3 +133,60 @@ func TestJupyterExecutorAuthFailure(t *testing.T) {
 		t.Fatalf("expected auth-required, got %s", remote.Kind)
 	}
 }
+func TestJupyterResolveKernelAndFormatChannels(t *testing.T) {
+	// 1. Existing kernels returned from GET /api/kernels
+	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/kernels" && r.Method == http.MethodGet {
+			if r.Header.Get(HeaderProxyToken) != "ptok" {
+				t.Errorf("missing proxy token header")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode([]map[string]any{{"id": "kernel-existing"}})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server1.Close()
+
+	executor := &JupyterWebSocketExecutor{SessionID: "sess-1", Client: server1.Client()}
+	kid, err := executor.resolveKernel(context.Background(), server1.URL, "ptok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kid != "kernel-existing" {
+		t.Fatalf("resolveKernel = %q, want %q", kid, "kernel-existing")
+	}
+
+	wsURL := formatChannelsWSURL(server1.URL, kid, "sess-1")
+	if !strings.HasPrefix(wsURL, "ws://") || !strings.Contains(wsURL, "/api/kernels/kernel-existing/channels?session_id=sess-1") {
+		t.Fatalf("formatChannelsWSURL = %q", wsURL)
+	}
+
+	// 2. Fallback to POST /api/sessions when /api/kernels returns empty
+	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/kernels" && r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
+			return
+		}
+		if r.URL.Path == "/api/sessions" && r.Method == http.MethodPost {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"kernel": map[string]any{"id": "kernel-created"},
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server2.Close()
+
+	executor2 := &JupyterWebSocketExecutor{SessionID: "sess-2", Client: server2.Client()}
+	kid2, err := executor2.resolveKernel(context.Background(), server2.URL, "ptok2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kid2 != "kernel-created" {
+		t.Fatalf("resolveKernel created = %q, want %q", kid2, "kernel-created")
+	}
+}
