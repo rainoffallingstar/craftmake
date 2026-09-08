@@ -110,7 +110,7 @@ func newColabAuthLoginCommand() *cobra.Command {
 	command.Flags().StringVar(&clientID, "client-id", "", "OAuth client id (or CRAFTMAKE_COLAB_CLIENT_ID)")
 	command.Flags().StringVar(&clientSecret, "client-secret", "", "OAuth client secret (or CRAFTMAKE_COLAB_CLIENT_SECRET)")
 	command.Flags().StringVar(&credentialFile, "credential-file", "", "Credential file to write the refresh token to")
-	command.Flags().DurationVar(&timeout, "timeout", 2*time.Minute, "How long to wait for authorization")
+	command.Flags().DurationVar(&timeout, "timeout", 5*time.Minute, "How long to wait for authorization")
 	return command
 }
 

@@ -46,30 +46,38 @@ func (s *LoopbackServer) serve() {
 }
 
 func (s *LoopbackServer) handle(w http.ResponseWriter, r *http.Request) {
+	// Ignore non-root requests such as /favicon.ico without failing the callback wait.
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	query, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
-		s.result <- LoopbackResult{Err: fmt.Errorf("parse callback: %w", err)}
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 	state := query.Get("state")
 	code := query.Get("code")
+	// If state doesn't match or code is missing, reject this HTTP request
+	// but keep listening for the legitimate callback instead of killing the server.
 	if state != s.state {
-		s.result <- LoopbackResult{Err: fmt.Errorf("state mismatch")}
 		http.Error(w, "Invalid state", http.StatusBadRequest)
 		return
 	}
 	if code == "" {
-		s.result <- LoopbackResult{Err: fmt.Errorf("missing authorization code")}
 		http.Error(w, "Missing code", http.StatusBadRequest)
 		return
 	}
-	s.result <- LoopbackResult{Code: code, State: state}
-	_, _ = w.Write([]byte("<html><body><h1>Authentication successful!</h1><p>You can close this tab and return to the terminal.</p></body></html>"))
+	select {
+	case s.result <- LoopbackResult{Code: code, State: state}:
+	default:
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte("<html><body style='font-family:sans-serif;text-align:center;padding-top:40px'><h1>Authentication successful!</h1><p>You can close this tab and return to the terminal.</p></body></html>"))
 }
 
 // Wait returns the captured code or a timeout error.
