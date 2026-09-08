@@ -117,4 +117,33 @@ func TestLoadRendersColabSettingsFromArgsAndEnv(t *testing.T) {
 	}
 }
 
+func TestLoadRendersColabPathMap(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "action.yaml")
+	content := []byte("schema_version: craftmake.action/v1\nname: colab\nbackend: colab\ninputs:\n  session: {}\ncolab:\n  session: ${{ args.session }}\n  path_map:\n    /analysis: /content/drive/MyDrive/${{ args.session }}/analysis\njobs:\n  run:\n    steps:\n      - run: echo ok\n")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadWithSources(path, map[string]string{"session": "gpu"}, map[string]string{}, root, filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Action.Colab == nil || loaded.Action.Colab.PathMap["/analysis"] != "/content/drive/MyDrive/gpu/analysis" {
+		t.Fatalf("unexpected path_map: %#v", loaded.Action.Colab)
+	}
+}
+
+func TestLoadRejectsRelativePathMapHost(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "action.yaml")
+	content := []byte("schema_version: craftmake.action/v1\nname: colab\nbackend: colab\ncolab:\n  path_map:\n    analysis: /content/drive/MyDrive/analysis\njobs:\n  run:\n    steps:\n      - run: echo ok\n")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadWithSources(path, nil, map[string]string{}, root, filepath.Join(root, "state"))
+	if err == nil || !strings.Contains(err.Error(), "must be absolute") {
+		t.Fatalf("expected absolute path_map error, got %v", err)
+	}
+}
+
 var _ = spec.CurrentVersion

@@ -33,14 +33,15 @@ type ActionSpec struct {
 }
 
 type ColabSpec struct {
-	Session     string   `yaml:"session,omitempty"`
-	AuthConfig  string   `yaml:"auth_config,omitempty"`
-	DriveRoot   string   `yaml:"drive_root,omitempty"`
-	RemoteRoot  string   `yaml:"remote_root,omitempty"`
-	ScratchRoot string   `yaml:"scratch_root,omitempty"`
-	SyncIn      bool     `yaml:"sync_in,omitempty"`
-	SyncOut     bool     `yaml:"sync_out,omitempty"`
-	Excludes    []string `yaml:"excludes,omitempty"`
+	Session     string            `yaml:"session,omitempty"`
+	AuthConfig  string            `yaml:"auth_config,omitempty"`
+	DriveRoot   string            `yaml:"drive_root,omitempty"`
+	RemoteRoot  string            `yaml:"remote_root,omitempty"`
+	ScratchRoot string            `yaml:"scratch_root,omitempty"`
+	SyncIn      bool              `yaml:"sync_in,omitempty"`
+	SyncOut     bool              `yaml:"sync_out,omitempty"`
+	Excludes    []string          `yaml:"excludes,omitempty"`
+	PathMap     map[string]string `yaml:"path_map,omitempty"`
 }
 
 type Loaded struct {
@@ -150,6 +151,17 @@ func validate(action ActionSpec) error {
 			normalized := filepath.ToSlash(strings.TrimSpace(exclude))
 			if normalized == "" || normalized == ".." || strings.HasPrefix(normalized, "../") {
 				return fmt.Errorf("invalid colab exclude %q", exclude)
+			}
+		}
+		for host, remote := range action.Colab.PathMap {
+			if strings.TrimSpace(host) == "" || strings.TrimSpace(remote) == "" {
+				return fmt.Errorf("colab path_map entries must be non-empty")
+			}
+			if !filepath.IsAbs(host) {
+				return fmt.Errorf("colab path_map host %q must be absolute", host)
+			}
+			if !filepath.IsAbs(remote) {
+				return fmt.Errorf("colab path_map remote %q must be absolute", remote)
 			}
 		}
 	}
@@ -264,11 +276,20 @@ func renderColab(spec ColabSpec, context map[string]any) (ColabSpec, error) {
 			return ColabSpec{}, err
 		}
 	}
+	if spec.PathMap != nil {
+		rendered := make(map[string]string, len(spec.PathMap))
+		for host, remote := range spec.PathMap {
+			if rendered[host], err = compiler.Render(remote, context); err != nil {
+				return ColabSpec{}, err
+			}
+		}
+		spec.PathMap = rendered
+	}
 	return spec, nil
 }
 
 func colabContext(spec ColabSpec) map[string]any {
-	return map[string]any{"session": spec.Session, "auth_config": spec.AuthConfig, "drive_root": spec.DriveRoot, "remote_root": spec.RemoteRoot, "scratch_root": spec.ScratchRoot, "sync_in": spec.SyncIn, "sync_out": spec.SyncOut, "excludes": spec.Excludes}
+	return map[string]any{"session": spec.Session, "auth_config": spec.AuthConfig, "drive_root": spec.DriveRoot, "remote_root": spec.RemoteRoot, "scratch_root": spec.ScratchRoot, "sync_in": spec.SyncIn, "sync_out": spec.SyncOut, "excludes": spec.Excludes, "path_map": spec.PathMap}
 }
 
 func parameterValues(args, environment map[string]string) map[string]any {
