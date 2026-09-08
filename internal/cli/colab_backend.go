@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/fallingstar10/craftmake/internal/backend"
 	colabpkg "github.com/fallingstar10/craftmake/internal/backend/colab"
@@ -35,6 +36,26 @@ type colabBackendConfig struct {
 	ProjectDirectory string
 }
 
+// resolveColabRefreshToken returns the Colab refresh token from the session's
+// credential file (written by `colab auth login`) or, as a fallback, from the
+// configured environment variable. The second return value reports whether a
+// token was found.
+func resolveColabRefreshToken(auth colabpkg.SessionAuth) (string, bool) {
+	if auth.ColabCredentialFile != "" {
+		if data, err := os.ReadFile(auth.ColabCredentialFile); err == nil {
+			if token := strings.TrimSpace(string(data)); token != "" {
+				return token, true
+			}
+		}
+	}
+	if auth.ColabRefreshTokenEnv != "" {
+		if token := os.Getenv(auth.ColabRefreshTokenEnv); token != "" {
+			return token, true
+		}
+	}
+	return "", false
+}
+
 // buildColabBackend loads the named session authentication and builds a
 // reference-informed Colab backend through the shared factory. It is
 // offline-testable: only configuration and adapter wiring happen here; live
@@ -55,9 +76,9 @@ func buildColabBackend(ctx context.Context, config colabBackendConfig) (backend.
 		return nil, err
 	}
 	client := colabpkg.NewColabServerClient(os.Getenv("CRAFTMAKE_COLAB_DOMAIN"), os.Getenv("CRAFTMAKE_COLAB_GAPI_DOMAIN"), nil)
-	if tokenEnv := auth.ColabRefreshTokenEnv; tokenEnv != "" {
+	if refreshToken, ok := resolveColabRefreshToken(auth); ok {
 		manager := &colabpkg.TokenManager{}
-		manager.SetRefreshToken(os.Getenv(tokenEnv))
+		manager.SetRefreshToken(refreshToken)
 		client.GetAccessToken = func() (string, error) { return manager.AccessToken(context.Background()) }
 	}
 	factory := colabpkg.NewFactory(colabpkg.FactoryDependencies{
