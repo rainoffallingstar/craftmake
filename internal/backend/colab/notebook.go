@@ -48,6 +48,22 @@ func BuildNotebook(manifest *protocol.TaskManifest, mapping RemoteTaskMapping) (
 
 func (n *Notebook) JSON() ([]byte, error) { return json.MarshalIndent(n, "", "  ") }
 
+// BuildNotebookRedacted builds a notebook and scrubs known secrets from every
+// code cell source so tokens never land in the auditable .ipynb artifact.
+func BuildNotebookRedacted(manifest *protocol.TaskManifest, mapping RemoteTaskMapping, redactor *Redactor) (*Notebook, error) {
+	notebook, err := BuildNotebook(manifest, mapping)
+	if err != nil {
+		return nil, err
+	}
+	if redactor == nil || !redactor.HasSecrets() {
+		return notebook, nil
+	}
+	for i := range notebook.Cells {
+		notebook.Cells[i].Source = redactor.Redact(notebook.Cells[i].Source)
+	}
+	return notebook, nil
+}
+
 func bootstrapSource(mapping RemoteTaskMapping) string {
 	return strings.Join([]string{"import os", "from pathlib import Path", "work = Path(" + pythonString(mapping.WorkDirectory) + ")", "temp = Path(" + pythonString(mapping.TempDirectory) + ")", "runtime = Path(" + pythonString(mapping.RuntimeDirectory) + ")", "result = Path(" + pythonString(mapping.ResultPath) + ")", "for path in (work, temp, runtime): path.mkdir(parents=True, exist_ok=True)", `os.environ["CRAFTMAKE_WORK"] = str(work)`, `os.environ["CRAFTMAKE_TEMP"] = str(temp)`, `os.environ["CRAFTMAKE_RUNTIME"] = str(runtime)`}, "\n") + "\n"
 }

@@ -58,6 +58,7 @@ type Backend struct {
 	Materializer   LogMaterializer
 	Workspace      WorkspaceSyncer
 	ResultReader   RemoteResultReader
+	Redactor       *Redactor
 	mutex          sync.Mutex
 	runtime        Runtime
 	active         bool
@@ -196,14 +197,14 @@ func (b *Backend) RunSubmission(ctx context.Context, submissionID string, reques
 			return result, err
 		}
 		mapping := RemoteTaskMapping{WorkDirectory: filepath.Join(b.remoteRoot(), "work"), TempDirectory: filepath.Join(b.scratchRoot(), "tmp"), RuntimeDirectory: filepath.Join(b.remoteRoot(), "runtime", manifest.TaskID), ResultPath: filepath.Join(b.remoteRoot(), "runtime", manifest.TaskID, "result.json")}
-		notebook, err := BuildNotebook(manifest, mapping)
+		notebook, err := BuildNotebookRedacted(manifest, mapping, b.Redactor)
 		if err != nil {
-			result.Tasks[manifest.TaskID] = backend.TaskOutcome{Err: err}
+			result.Tasks[manifest.TaskID] = backend.TaskOutcome{Err: RedactError(b.Redactor, err)}
 			continue
 		}
 		payload, err := notebook.JSON()
 		if err != nil {
-			result.Tasks[manifest.TaskID] = backend.TaskOutcome{Err: err}
+			result.Tasks[manifest.TaskID] = backend.TaskOutcome{Err: RedactError(b.Redactor, err)}
 			continue
 		}
 		if request.OnStarted != nil {
@@ -213,12 +214,12 @@ func (b *Backend) RunSubmission(ctx context.Context, submissionID string, reques
 		}
 		output, err := b.Executor.ExecuteNotebook(ctx, runtime, payload)
 		if err != nil {
-			result.Tasks[manifest.TaskID] = backend.TaskOutcome{Err: err}
+			result.Tasks[manifest.TaskID] = backend.TaskOutcome{Err: RedactError(b.Redactor, err)}
 			continue
 		}
 		taskResult, err := DecodeTaskResult(output)
 		if err != nil {
-			result.Tasks[manifest.TaskID] = backend.TaskOutcome{Err: err}
+			result.Tasks[manifest.TaskID] = backend.TaskOutcome{Err: RedactError(b.Redactor, err)}
 			continue
 		}
 		if err := b.materializeTaskLogs(ctx, taskResult, manifest, mapping); err != nil {
