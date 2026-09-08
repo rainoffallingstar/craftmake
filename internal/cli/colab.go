@@ -135,25 +135,43 @@ func newColabDriveMountCommand() *cobra.Command {
 			return backendFailureError(fmt.Errorf("drive authorization returned no redirect URL"))
 		}
 
-		fmt.Fprintf(command.OutOrStdout(), "\nGoogle Drive authorization required for session %q.\nOpen this URL in your browser to grant Drive access to Colab:\n%s\n\nWaiting for authorization (up to %v)...\n", sessionID, probe.UnauthorizedRedirectURI, timeout)
+		fmt.Fprintf(command.OutOrStdout(), "\nGoogle Drive authorization required for session %q.\nOpen this URL in your browser to grant Drive access to Colab:\n%s\n\nWaiting for authorization (press Enter once authorized in browser, or wait for auto-detection)...\n", sessionID, probe.UnauthorizedRedirectURI)
 		_ = openBrowser(probe.UnauthorizedRedirectURI)
 
 		deadline := time.Now().Add(timeout)
 		ticker := time.NewTicker(3 * time.Second)
 		defer ticker.Stop()
 
+		enterCh := make(chan struct{}, 1)
+		go func() {
+			var buf [1]byte
+			_, _ = os.Stdin.Read(buf[:])
+			enterCh <- struct{}{}
+		}()
+
+		checkAndComplete := func() bool {
+			res, err := client.PropagateCredentials(ctx, assignment.Endpoint, "dfs_ephemeral", false)
+			if err == nil && res.Success {
+				fmt.Fprintf(command.OutOrStdout(), "\nGoogle Drive successfully authorized for session %q!\nFuture runs will automatically mount Google Drive at %s.\n", sessionID, auth.MountPath)
+				return true
+			}
+			return false
+		}
+
 		for {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
+			case <-enterCh:
+				if checkAndComplete() {
+					return nil
+				}
+				fmt.Fprintf(command.OutOrStdout(), "Still waiting for browser confirmation... Press Enter again after allowing in browser.\n")
 			case <-ticker.C:
 				if time.Now().After(deadline) {
 					return backendFailureError(fmt.Errorf("Google Drive authorization timed out after %v", timeout))
 				}
-				poll, pollErr := client.PropagateCredentials(ctx, assignment.Endpoint, "dfs_ephemeral", true)
-				if pollErr == nil && poll.Success {
-					_, _ = client.PropagateCredentials(ctx, assignment.Endpoint, "dfs_ephemeral", false)
-					fmt.Fprintf(command.OutOrStdout(), "\nGoogle Drive successfully authorized for session %q!\nFuture runs will automatically mount Google Drive at %s.\n", sessionID, auth.MountPath)
+				if checkAndComplete() {
 					return nil
 				}
 			}
