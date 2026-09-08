@@ -117,6 +117,7 @@ func exactArgs(count int) cobra.PositionalArgs {
 
 func newActionRunCommand(buildInfo BuildInfo) *cobra.Command {
 	var dir, config, backendName, stateDir, runID, format string
+	var colabSessionID, colabAuthConfig string
 	var inputValues, argValues []string
 	var workers, maxParallel, maxCores int
 	var maxMemory string
@@ -152,8 +153,8 @@ func newActionRunCommand(buildInfo BuildInfo) *cobra.Command {
 		if backendName == "" {
 			backendName = "local"
 		}
-		if backendName != "local" {
-			return usageError("action backend %q is not implemented yet; local is available", backendName)
+		if backendName != "local" && backendName != "colab" {
+			return usageError("action backend %q is not implemented yet; local and colab are available", backendName)
 		}
 		if dryRun {
 			printPlan(command, plan)
@@ -164,6 +165,9 @@ func newActionRunCommand(buildInfo BuildInfo) *cobra.Command {
 		}
 		if workers <= 0 {
 			workers = runtime.NumCPU()
+		}
+		if backendName == "colab" && workers > 1 {
+			workers = 1
 		}
 		options.resolvedBackend = backendName
 		projectDirectory, stateDirectory, databasePath, err := resolveRuntimePaths(options)
@@ -178,7 +182,16 @@ func newActionRunCommand(buildInfo BuildInfo) *cobra.Command {
 		if err != nil {
 			return usageError("invalid --max-memory value %q: %v", maxMemory, err)
 		}
-		selectedBackend := backend.Backend(local.New())
+		var selectedBackend backend.Backend
+		if backendName == "colab" {
+			colabBackend, colabErr := buildColabBackend(command.Context(), colabBackendConfig{SessionID: colabSessionID, AuthConfig: colabAuthConfig, ProjectDirectory: options.projectDir})
+			if colabErr != nil {
+				return configurationError(colabErr)
+			}
+			selectedBackend = colabBackend
+		} else {
+			selectedBackend = local.New()
+		}
 		if runID == "" {
 			runID = defaultMutableRunID()
 		}
@@ -204,7 +217,9 @@ func newActionRunCommand(buildInfo BuildInfo) *cobra.Command {
 	command.Flags().StringVar(&config, "config", "", "Existing workflow configuration")
 	command.Flags().StringArrayVar(&inputValues, "input", nil, "Deprecated alias for --arg KEY=VALUE")
 	command.Flags().StringArrayVar(&argValues, "arg", nil, "Canonical command-line action argument KEY=VALUE")
-	command.Flags().StringVar(&backendName, "backend", "", "Override the action backend")
+	command.Flags().StringVar(&backendName, "backend", "", "Override the action backend (local/colab)")
+	command.Flags().StringVar(&colabSessionID, "colab-session", "", "Named Colab session used to build the backend")
+	command.Flags().StringVar(&colabAuthConfig, "colab-auth-config", "~/.config/craftmake/colab-auth.json", "Colab authentication config path")
 	command.Flags().StringVar(&stateDir, "state-dir", "", "Craftmake state directory")
 	command.Flags().StringVar(&runID, "run-id", "", "Run identifier")
 	command.Flags().IntVar(&workers, "workers", 0, "Maximum active submissions")

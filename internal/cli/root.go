@@ -19,6 +19,7 @@ import (
 	"github.com/fallingstar10/craftmake/internal/adapters/otter"
 	"github.com/fallingstar10/craftmake/internal/adapters/standalone"
 	"github.com/fallingstar10/craftmake/internal/backend"
+	colabpkg "github.com/fallingstar10/craftmake/internal/backend/colab"
 	"github.com/fallingstar10/craftmake/internal/backend/local"
 	"github.com/fallingstar10/craftmake/internal/backend/slurm"
 	"github.com/fallingstar10/craftmake/internal/compiler"
@@ -176,6 +177,8 @@ func newRunCommand(buildInfo BuildInfo) *cobra.Command {
 	var force bool
 	var dryRun bool
 	var runID string
+	var colabSessionID string
+	var colabAuthConfig string
 	command := &cobra.Command{Use: "run", Short: "Run a compiled workflow", RunE: func(command *cobra.Command, arguments []string) error {
 		plan, err := loadPlan(&options)
 		if err != nil {
@@ -233,11 +236,20 @@ func newRunCommand(buildInfo BuildInfo) *cobra.Command {
 			effectiveWorkers,
 			options.execution.Slurm.MaxJobs,
 		)
+		if backendName == "colab" && effectiveWorkers > 1 {
+			effectiveWorkers = 1
+		}
 		effectiveMaxCores := effectiveSchedulerMaxCores(backendName, maxCores, command.Flags().Changed("max-cores"))
 		var selectedBackend backend.Backend
 		switch backendName {
 		case "local":
 			selectedBackend = local.New()
+		case "colab":
+			colabBackend, colabErr := buildColabBackend(command.Context(), colabBackendConfig{SessionID: colabSessionID, AuthConfig: colabAuthConfig, ProjectDirectory: options.projectDir})
+			if colabErr != nil {
+				return configurationError(colabErr)
+			}
+			selectedBackend = colabBackend
 		case "slurm":
 			slurmBackend, configureErr := configuredSlurmBackendWithResources(
 				slurmPartition,
@@ -304,7 +316,7 @@ func newRunCommand(buildInfo BuildInfo) *cobra.Command {
 		return taskFailureError(runErr)
 	}}
 	addPlanFlags(command, &options)
-	command.Flags().StringVar(&backendName, "backend", "", "Override the resolved execution backend (local/slurm)")
+	command.Flags().StringVar(&backendName, "backend", "", "Override the resolved execution backend (local/slurm/colab)")
 	command.Flags().StringVar(&slurmPartition, "partition", os.Getenv("CRAFTMAKE_SLURM_PARTITION"), "Override the Slurm partition (or set CRAFTMAKE_SLURM_PARTITION)")
 	command.Flags().StringVar(&slurmAccount, "account", "", "Slurm account")
 	command.Flags().StringVar(&slurmQOS, "qos", "", "Slurm quality of service")
@@ -320,6 +332,8 @@ func newRunCommand(buildInfo BuildInfo) *cobra.Command {
 	command.Flags().DurationVar(&slurmPendingTimeout, "slurm-pending-timeout", 0, "Cancel a Slurm job after this continuous pending duration, 0 disables")
 	command.Flags().BoolVar(&force, "force", false, "Ignore fingerprint cache")
 	command.Flags().BoolVar(&dryRun, "dry-run", false, "Compile and display the plan without executing")
+	command.Flags().StringVar(&colabSessionID, "colab-session", "", "Named Colab session used to build the backend")
+	command.Flags().StringVar(&colabAuthConfig, "colab-auth-config", "~/.config/craftmake/colab-auth.json", "Colab authentication config path")
 	command.Flags().BoolVar(&options.gateMode, "gate", false, "Enforce immutable backend, run identity, and Slurm resources")
 	command.Flags().StringVar(&runID, "run-id", "", "Override the resolved run identifier")
 	command.Flags().StringVar(&options.format, "format", "text", "Output format (text/json/jsonl)")
@@ -887,13 +901,24 @@ func newLogsCommand() *cobra.Command {
 
 func newDoctorCommand() *cobra.Command {
 	var backendName string
+	var colabSessionID string
+	var colabAuthConfig string
 	command := &cobra.Command{Use: "doctor", Short: "Check runtime dependencies", RunE: func(command *cobra.Command, arguments []string) error {
-		if backendName != "local" && backendName != "slurm" {
-			return usageError("unsupported backend %q", backendName)
-		}
-		if backendName == "local" {
+		switch backendName {
+		case "local":
 			fmt.Fprintf(command.OutOrStdout(), "local: ok\ngnu_time: %t\nenva_or_conda: optional\n", fileExists("/usr/bin/time"))
 			return nil
+		case "colab":
+			configPath, pathErr := expandUserPath(colabAuthConfig)
+			if pathErr != nil {
+				return usageError("invalid --colab-auth-config: %v", pathErr)
+			}
+			if _, loadErr := colabpkg.LoadSessionAuth(configPath, colabSessionID); loadErr != nil {
+				return backendFailureError(fmt.Errorf("Colab session %q is not ready: %v", colabSessionID, loadErr))
+			}
+			fmt.Fprintf(command.OutOrStdout(), "colab: ok\nsession: %s\nauth_config: %s\n", colabSessionID, configPath)
+			return nil
+		case "slurm":
 		}
 		missing := []string{}
 		for _, executable := range []string{"sinfo", "sbatch", "squeue", "sacct", "scancel", "srun"} {
@@ -908,6 +933,8 @@ func newDoctorCommand() *cobra.Command {
 		return nil
 	}}
 	command.Flags().StringVar(&backendName, "backend", "local", "Backend to check")
+	command.Flags().StringVar(&colabSessionID, "colab-session", "", "Named Colab session to check")
+	command.Flags().StringVar(&colabAuthConfig, "colab-auth-config", "~/.config/craftmake/colab-auth.json", "Colab authentication config path")
 	return command
 }
 
