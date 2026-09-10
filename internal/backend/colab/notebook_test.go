@@ -42,6 +42,22 @@ func TestDecodeTaskResultUsesSentinelAndProtocolVersion(t *testing.T) {
 		t.Fatal("expected protocol version rejection")
 	}
 }
+func TestBootstrapMountsDriveAndFinalizerFlushes(t *testing.T) {
+	manifest := &protocol.TaskManifest{ProtocolVersion: protocol.Version, RunID: "run-1", TaskID: "task-1", Attempt: 1, WorkDirectory: "/content/drive/MyDrive/proj/work", TempDirectory: "/content/tmp", RuntimeDirectory: "/content/drive/MyDrive/proj/runtime", ResultPath: "/content/drive/MyDrive/proj/runtime/result.json", Steps: []protocol.StepManifest{{Index: 0, Name: "s", Command: "echo hi"}}}
+	notebook, err := BuildNotebook(manifest, RemoteTaskMapping{WorkDirectory: "/content/drive/MyDrive/proj/work", TempDirectory: "/content/tmp", RuntimeDirectory: "/content/drive/MyDrive/proj/runtime", ResultPath: "/content/drive/MyDrive/proj/runtime/result.json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// bootstrap (cell 0) must inject drive.mount when the work dir is on Drive.
+	if !strings.Contains(notebook.Cells[0].Source, "drive.mount") {
+		t.Fatalf("bootstrap missing drive.mount: %s", notebook.Cells[0].Source)
+	}
+	// finalizer (last cell) must flush Drive writes before the instance is released.
+	finalizer := notebook.Cells[len(notebook.Cells)-1].Source
+	if !strings.Contains(finalizer, "flush_and_unmount") {
+		t.Fatalf("finalizer missing flush_and_unmount: %s", finalizer)
+	}
+}
 
 type fakeControlPlane struct{ acquired, released int }
 

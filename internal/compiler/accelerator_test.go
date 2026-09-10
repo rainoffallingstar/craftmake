@@ -35,6 +35,11 @@ func TestTaskCarriesAccelerator(t *testing.T) {
 	if plan.Tasks[0].Accelerator != "gpu" {
 		t.Fatalf("task accelerator = %q, want gpu", plan.Tasks[0].Accelerator)
 	}
+	// The scheduler reads task.Resources.Accelerator to populate the manifest,
+	// so it must carry the same value (TDD 1.6).
+	if plan.Tasks[0].Resources.Accelerator != "gpu" {
+		t.Fatalf("task resources accelerator = %q, want gpu", plan.Tasks[0].Resources.Accelerator)
+	}
 }
 
 func TestTaskAcceleratorEmptyByDefault(t *testing.T) {

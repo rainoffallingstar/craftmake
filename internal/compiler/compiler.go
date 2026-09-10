@@ -157,7 +157,7 @@ func compileTaskSkeleton(workflow *spec.WorkflowSpec, jobID string, job spec.Job
 		if err != nil {
 			return nil, fmt.Errorf("job %q worker resources: %w", jobID, err)
 		}
-		workerPlan = &WorkerPlan{Resources: protocol.ResourceRequest{Cores: job.Worker.Resources.Cores, MemoryByte: workerMemory, Partition: job.Worker.Resources.Partition, Time: job.Worker.Resources.Time}, MaxParallel: job.Worker.MaxParallel}
+		workerPlan = &WorkerPlan{Resources: protocol.ResourceRequest{Cores: job.Worker.Resources.Cores, MemoryByte: workerMemory, Partition: job.Worker.Resources.Partition, Time: job.Worker.Resources.Time, Accelerator: job.Accelerator}, MaxParallel: job.Worker.MaxParallel}
 		if phaseEnvelope, declared := context.Execution.PhaseResources[workflow.On.Otter.Phase]; declared && workerPlan.Resources.Time == "" {
 			workerPlan.Resources.Time = phaseEnvelope.Time
 		}

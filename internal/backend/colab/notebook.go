@@ -158,6 +158,11 @@ for i in range(step_count):
             print(f"[step-{i} stderr]\n{err_text}")
 result_path.parent.mkdir(parents=True, exist_ok=True)
 result_path.write_text(json.dumps(payload, indent=2))
+try:
+    from google.colab import drive
+    drive.flush_and_unmount()
+except Exception:
+    pass
 print("CRAFTMAKE_TASK_RESULT_BEGIN")
 print(json.dumps(payload, sort_keys=True))
 print("CRAFTMAKE_TASK_RESULT_END")

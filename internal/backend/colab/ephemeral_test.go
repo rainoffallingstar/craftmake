@@ -105,3 +105,20 @@ func TestEndRunDefensiveCleanup(t *testing.T) {
 		t.Fatalf("expected no residual release, got %d", control.released)
 	}
 }
+func TestRunSubmissionConsecutiveSameType(t *testing.T) {
+	control := &fakeAccelControlPlane{}
+	b := &Backend{Control: control, Executor: fakeNotebookExecutor{}, Config: Config{RemoteRoot: "/content/craftmake", DefaultAccelerator: "cpu"}}
+	if err := b.BeginRun(context.Background(), backendpkg.RunContext{RunID: "run-1"}); err != nil {
+		t.Fatal(err)
+	}
+	m1 := &protocol.TaskManifest{RunID: "run-1", TaskID: "t1", Resources: protocol.ResourceRequest{Accelerator: "cpu"}, Steps: []protocol.StepManifest{{Index: 0, Name: "s", StdoutPath: "/tmp/o", StderrPath: "/tmp/e"}}}
+	m2 := &protocol.TaskManifest{RunID: "run-1", TaskID: "t2", Resources: protocol.ResourceRequest{Accelerator: "cpu"}, Steps: []protocol.StepManifest{{Index: 0, Name: "s", StdoutPath: "/tmp/o", StderrPath: "/tmp/e"}}}
+	if _, err := b.RunSubmission(context.Background(), "sub-1", backendpkg.SubmissionRequest{Manifests: []*protocol.TaskManifest{m1, m2}}); err != nil {
+		t.Fatal(err)
+	}
+	// Two same-type manifests must each get an independent acquire/release
+	// (no reuse, because Drive is the durable shared state).
+	if len(control.acquiredAccels) != 2 || control.released != 2 {
+		t.Fatalf("expected 2 independent acquires/releases, got %d/%d", len(control.acquiredAccels), control.released)
+	}
+}
