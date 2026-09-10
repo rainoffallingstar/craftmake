@@ -26,7 +26,18 @@ func (c *ServerControlPlane) AcquireRuntime(ctx context.Context, request Runtime
 	if spec.NotebookHash == "" {
 		spec.NotebookHash = notebookHash(request.RunID)
 	}
-	if request.Accelerator != "" {
+	// Map the abstract accelerator type ("cpu"/"gpu"/"tpu") to the Colab
+	// variant ("DEFAULT"/"GPU"/"TPU"). A specific GPU model (e.g. "T4") is
+	// passed through as the accelerator. "cpu" means no variant/accelerator.
+	switch request.Accelerator {
+	case "gpu":
+		spec.Variant = "GPU"
+	case "tpu":
+		spec.Variant = "TPU"
+	case "cpu", "":
+		spec.Variant = ""
+		spec.Accelerator = ""
+	default:
 		spec.Accelerator = request.Accelerator
 	}
 	assignment, err := c.Client.Assign(ctx, spec)

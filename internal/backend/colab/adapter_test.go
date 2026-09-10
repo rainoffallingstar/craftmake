@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -50,28 +51,44 @@ func TestServerControlPlaneAcquireAndReleaseMapToAssignAndUnassign(t *testing.T)
 	}
 }
 
-func TestServerControlPlanePassesAcceleratorToAssign(t *testing.T) {
-	var assignQuery string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, TunEndpoint+"/assign") {
-			if r.Method == http.MethodGet {
-				_, _ = w.Write([]byte(`{"token":"xsrf"}`))
+func TestServerControlPlaneMapsAcceleratorToVariant(t *testing.T) {
+	cases := []struct {
+		abstract    string
+		wantVariant string
+		wantAccel   string
+	}{
+		{"gpu", "GPU", ""},
+		{"tpu", "TPU", ""},
+		{"cpu", "", ""},
+		{"", "", ""},
+	}
+	for _, tc := range cases {
+		var assignQuery string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, TunEndpoint+"/assign") {
+				if r.Method == http.MethodGet {
+					_, _ = w.Write([]byte(`{"token":"xsrf"}`))
+					return
+				}
+				assignQuery = r.URL.RawQuery
+				_ = json.NewEncoder(w).Encode(map[string]any{"endpoint": "https://proxy.example.test", "runtimeProxyInfo": map[string]any{"token": "pt", "url": "https://proxy.example.test"}})
 				return
 			}
-			assignQuery = r.URL.RawQuery
-			_ = json.NewEncoder(w).Encode(map[string]any{"endpoint": "https://proxy.example.test", "runtimeProxyInfo": map[string]any{"token": "pt", "url": "https://proxy.example.test"}})
-			return
+			http.NotFound(w, r)
+		}))
+		client := NewColabServerClient(server.URL, server.URL, server.Client())
+		plane := &ServerControlPlane{Client: client}
+		if _, err := plane.AcquireRuntime(context.Background(), RuntimeRequest{RunID: "run-abc", Accelerator: tc.abstract}); err != nil {
+			t.Fatal(err)
 		}
-		http.NotFound(w, r)
-	}))
-	defer server.Close()
-	client := NewColabServerClient(server.URL, server.URL, server.Client())
-	plane := &ServerControlPlane{Client: client}
-	if _, err := plane.AcquireRuntime(context.Background(), RuntimeRequest{RunID: "run-abc", Accelerator: "gpu"}); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(assignQuery, "accelerator=gpu") {
-		t.Fatalf("expected accelerator=gpu in assign query, got %q", assignQuery)
+		q, _ := url.ParseQuery(assignQuery)
+		if q.Get("variant") != tc.wantVariant {
+			t.Fatalf("abstract %q: variant = %q, want %q (query %q)", tc.abstract, q.Get("variant"), tc.wantVariant, assignQuery)
+		}
+		if q.Get("accelerator") != tc.wantAccel {
+			t.Fatalf("abstract %q: accelerator = %q, want %q (query %q)", tc.abstract, q.Get("accelerator"), tc.wantAccel, assignQuery)
+		}
+		server.Close()
 	}
 }
 
