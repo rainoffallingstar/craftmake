@@ -26,6 +26,9 @@ func (c *ServerControlPlane) AcquireRuntime(ctx context.Context, request Runtime
 	if spec.NotebookHash == "" {
 		spec.NotebookHash = notebookHash(request.RunID)
 	}
+	if request.Accelerator != "" {
+		spec.Accelerator = request.Accelerator
+	}
 	assignment, err := c.Client.Assign(ctx, spec)
 	if err != nil {
 		if remote, ok := err.(*RemoteError); ok && remote.StatusCode == http.StatusPreconditionFailed {
@@ -49,6 +52,13 @@ func (c *ServerControlPlane) ReleaseRuntime(ctx context.Context, runtime Runtime
 		return fmt.Errorf("Colab server client is required")
 	}
 	return c.Client.Unassign(ctx, runtime.ID)
+}
+
+func (c *ServerControlPlane) ListAssignments(ctx context.Context) ([]Assignment, error) {
+	if c.Client == nil {
+		return nil, fmt.Errorf("Colab server client is required")
+	}
+	return c.Client.ListAssignments(ctx)
 }
 
 // ProxyNotebookExecutor executes a notebook through the Colab runtime proxy,

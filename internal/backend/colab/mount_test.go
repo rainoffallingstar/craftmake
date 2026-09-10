@@ -48,7 +48,7 @@ func TestBeginRunMountAuthorizedProceeds(t *testing.T) {
 	if err := b.BeginRun(context.Background(), backendpkg.RunContext{RunID: "run-1", ProjectDirectory: "/local/project"}); err != nil {
 		t.Fatal(err)
 	}
-	if control.acquired != 1 {
-		t.Fatalf("expected runtime acquired, got %d", control.acquired)
+	if control.acquired != 0 {
+		t.Fatalf("BeginRun must not acquire a runtime, got %d", control.acquired)
 	}
 }

@@ -7,15 +7,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/fallingstar10/craftmake/internal/backend"
 	"github.com/fallingstar10/craftmake/pkg/protocol"
 )
 
 type RuntimeRequest struct {
-	RunID  string
-	Region string
+	RunID       string
+	Region      string
+	Accelerator string
 }
 type Runtime struct {
 	ID         string
@@ -26,6 +26,7 @@ type Runtime struct {
 type ControlPlane interface {
 	AcquireRuntime(context.Context, RuntimeRequest) (Runtime, error)
 	ReleaseRuntime(context.Context, Runtime) error
+	ListAssignments(context.Context) ([]Assignment, error)
 }
 type NotebookExecutor interface {
 	ExecuteNotebook(context.Context, Runtime, []byte) (string, error)
@@ -46,14 +47,15 @@ type LogMaterializer interface {
 }
 
 type Config struct {
-	RemoteRoot     string
-	ScratchRoot    string
-	DriveRoot      string
-	MountPath      string
-	AuthConfigPath string
-	SessionID      string
-	LocalRoot      string
-	SyncExcludes   []string
+	RemoteRoot         string
+	ScratchRoot        string
+	DriveRoot          string
+	MountPath          string
+	AuthConfigPath     string
+	SessionID          string
+	LocalRoot          string
+	SyncExcludes       []string
+	DefaultAccelerator string
 }
 
 type Backend struct {
@@ -65,9 +67,6 @@ type Backend struct {
 	Workspace      WorkspaceSyncer
 	ResultReader   RemoteResultReader
 	Redactor       *Redactor
-	mutex          sync.Mutex
-	runtime        Runtime
-	active         bool
 }
 
 func (b *Backend) Name() string { return "colab" }
@@ -92,41 +91,27 @@ func (b *Backend) BeginRun(ctx context.Context, run backend.RunContext) error {
 			config.MountPath = auth.MountPath
 		}
 	}
-	b.mutex.Lock()
+	if config.DefaultAccelerator == "" {
+		config.DefaultAccelerator = "cpu"
+	}
 	b.Config = config
-	if b.active {
-		b.mutex.Unlock()
-		return fmt.Errorf("colab runtime is already active")
-	}
-	runtime, err := b.Control.AcquireRuntime(ctx, RuntimeRequest{RunID: run.RunID})
-	if err != nil {
-		b.mutex.Unlock()
-		return fmt.Errorf("acquire Colab runtime: %w", err)
-	}
-	b.runtime, b.active = runtime, true
-	b.mutex.Unlock()
-	rollback := func(beginErr error) error {
-		b.mutex.Lock()
-		b.active = false
-		b.runtime = Runtime{}
-		b.mutex.Unlock()
-		if releaseErr := b.Control.ReleaseRuntime(ctx, runtime); releaseErr != nil {
-			return fmt.Errorf("%w; release Colab runtime after failed begin: %v", beginErr, releaseErr)
-		}
-		return beginErr
-	}
+	// Validate Drive authorization up front (a credential check, not a runtime
+	// assignment). Instances are acquired per-submission in RunSubmission and
+	// released immediately after each manifest executes, because Google Drive
+	// is the durable shared state between jobs.
 	if config.DriveRoot != "" {
 		if b.MountPreflight == nil {
-			return rollback(fmt.Errorf("drive mount preflight is required when drive root is configured"))
+			return fmt.Errorf("drive mount preflight is required when drive root is configured")
 		}
 		mountPath := config.MountPath
 		if mountPath == "" {
 			mountPath = "/content/drive"
 		}
 		if err := b.MountPreflight.CheckMount(ctx, DriveMountRequest{RunID: run.RunID, SessionID: config.SessionID, AuthConfigPath: config.AuthConfigPath, MountPath: mountPath, DriveRoot: config.DriveRoot}); err != nil {
-			return rollback(&MountNotAuthorizedError{SessionID: config.SessionID, AuthConfigPath: config.AuthConfigPath, MountPath: mountPath, DriveRoot: config.DriveRoot, Err: err})
+			return &MountNotAuthorizedError{SessionID: config.SessionID, AuthConfigPath: config.AuthConfigPath, MountPath: mountPath, DriveRoot: config.DriveRoot, Err: err}
 		}
 	}
+	// Sync the local project into the durable Drive workspace once at run start.
 	if b.Workspace != nil && config.LocalRoot != "" {
 		target := config.DriveRoot
 		if target == "" {
@@ -137,22 +122,13 @@ func (b *Backend) BeginRun(ctx context.Context, run backend.RunContext) error {
 			excludes = []string{".craftmake/state", ".git"}
 		}
 		if err := b.Workspace.SyncIn(ctx, WorkspaceSyncRequest{RunID: run.RunID, LocalRoot: config.LocalRoot, RemoteRoot: target, Direction: "in", Excludes: excludes}); err != nil {
-			return rollback(fmt.Errorf("sync workspace to Colab: %w", err))
+			return fmt.Errorf("sync workspace to Colab: %w", err)
 		}
 	}
 	return nil
 }
 
 func (b *Backend) EndRun(ctx context.Context, outcome backend.RunOutcome) error {
-	b.mutex.Lock()
-	if !b.active {
-		b.mutex.Unlock()
-		return nil
-	}
-	runtime := b.runtime
-	b.active = false
-	b.runtime = Runtime{}
-	b.mutex.Unlock()
 	var syncErr error
 	config := b.Config
 	if config.AuthConfigPath != "" {
@@ -178,63 +154,84 @@ func (b *Backend) EndRun(ctx context.Context, outcome backend.RunOutcome) error 
 		}
 		syncErr = b.Workspace.SyncOut(ctx, WorkspaceSyncRequest{RunID: outcome.RunID, LocalRoot: target, RemoteRoot: outcome.ProjectDirectory, Direction: "out", Excludes: excludes})
 	}
-	releaseErr := b.Control.ReleaseRuntime(ctx, runtime)
-	if syncErr != nil && releaseErr != nil {
-		return fmt.Errorf("sync workspace from Colab: %v; release Colab runtime after %s: %w", syncErr, outcome.Status, releaseErr)
+	// Defensive cleanup: instances are released per-submission in RunSubmission,
+	// but scan for and release any residual assignments to guarantee zero leakage.
+	if b.Control != nil {
+		if assignments, err := b.Control.ListAssignments(ctx); err == nil {
+			for _, a := range assignments {
+				_ = b.Control.ReleaseRuntime(ctx, Runtime{ID: a.Endpoint})
+			}
+		}
 	}
 	if syncErr != nil {
 		return fmt.Errorf("sync workspace from Colab: %w", syncErr)
-	}
-	if releaseErr != nil {
-		return fmt.Errorf("release Colab runtime after %s: %w", outcome.Status, releaseErr)
 	}
 	return nil
 }
 
 func (b *Backend) RunSubmission(ctx context.Context, submissionID string, request backend.SubmissionRequest) (*backend.SubmissionResult, error) {
-	b.mutex.Lock()
-	runtime, active := b.runtime, b.active
-	b.mutex.Unlock()
-	if !active {
-		return nil, fmt.Errorf("colab runtime is not active")
-	}
 	result := &backend.SubmissionResult{BackendID: "colab:" + submissionID, Tasks: map[string]backend.TaskOutcome{}}
 	for _, manifest := range request.Manifests {
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		mapping := RemoteTaskMapping{WorkDirectory: filepath.Join(b.remoteRoot(), "work"), TempDirectory: filepath.Join(b.scratchRoot(), "tmp"), RuntimeDirectory: filepath.Join(b.remoteRoot(), "runtime", manifest.TaskID), ResultPath: filepath.Join(b.remoteRoot(), "runtime", manifest.TaskID, "result.json")}
-		notebook, err := BuildNotebookRedacted(manifest, mapping, b.Redactor)
+		// 1. Determine the accelerator type for this manifest.
+		accelerator := manifest.Resources.Accelerator
+		if accelerator == "" {
+			accelerator = b.Config.DefaultAccelerator
+		}
+		if accelerator == "" {
+			accelerator = "cpu"
+		}
+		// 2. Acquire a fresh ephemeral instance of the requested type.
+		runtime, err := b.Control.AcquireRuntime(ctx, RuntimeRequest{RunID: manifest.RunID, Accelerator: accelerator})
 		if err != nil {
 			result.Tasks[manifest.TaskID] = backend.TaskOutcome{Err: RedactError(b.Redactor, err)}
 			continue
 		}
-		payload, err := notebook.JSON()
-		if err != nil {
-			result.Tasks[manifest.TaskID] = backend.TaskOutcome{Err: RedactError(b.Redactor, err)}
-			continue
-		}
-		if request.OnStarted != nil {
-			if err := request.OnStarted("colab:"+manifest.TaskID, map[string]any{"runtime_id": runtime.ID}); err != nil {
-				return result, err
+		// 3. Execute the manifest on this instance.
+		outcome := b.executeOnRuntime(ctx, runtime, manifest, request.OnStarted)
+		// 4. Release the instance immediately — Drive is the durable shared state.
+		if releaseErr := b.Control.ReleaseRuntime(ctx, runtime); releaseErr != nil {
+			if outcome.Err == nil {
+				outcome.Err = RedactError(b.Redactor, fmt.Errorf("release Colab runtime: %w", releaseErr))
 			}
 		}
-		output, err := b.Executor.ExecuteNotebook(ctx, runtime, payload)
-		if err != nil {
-			result.Tasks[manifest.TaskID] = backend.TaskOutcome{Err: RedactError(b.Redactor, err)}
-			continue
-		}
-		taskResult, err := DecodeTaskResult(output)
-		if err != nil {
-			result.Tasks[manifest.TaskID] = backend.TaskOutcome{Err: RedactError(b.Redactor, fmt.Errorf("%w; raw kernel output: %q", err, output))}
-			continue
-		}
-		if err := b.materializeTaskLogs(ctx, taskResult, manifest, mapping, output); err != nil {
-			taskResult.ObservabilityErrors = append(taskResult.ObservabilityErrors, err.Error())
-		}
-		result.Tasks[manifest.TaskID] = backend.TaskOutcome{Result: &backend.Result{TaskResult: taskResult, BackendID: "colab:" + manifest.TaskID}}
+		result.Tasks[manifest.TaskID] = outcome
 	}
 	return result, nil
+}
+
+// executeOnRuntime builds and runs a single manifest on the given runtime,
+// materializing logs and decoding the task result. It does not manage the
+// runtime lifecycle; the caller is responsible for release.
+func (b *Backend) executeOnRuntime(ctx context.Context, runtime Runtime, manifest *protocol.TaskManifest, onStarted func(string, map[string]any) error) backend.TaskOutcome {
+	mapping := RemoteTaskMapping{WorkDirectory: filepath.Join(b.remoteRoot(), "work"), TempDirectory: filepath.Join(b.scratchRoot(), "tmp"), RuntimeDirectory: filepath.Join(b.remoteRoot(), "runtime", manifest.TaskID), ResultPath: filepath.Join(b.remoteRoot(), "runtime", manifest.TaskID, "result.json")}
+	notebook, err := BuildNotebookRedacted(manifest, mapping, b.Redactor)
+	if err != nil {
+		return backend.TaskOutcome{Err: RedactError(b.Redactor, err)}
+	}
+	payload, err := notebook.JSON()
+	if err != nil {
+		return backend.TaskOutcome{Err: RedactError(b.Redactor, err)}
+	}
+	if onStarted != nil {
+		if err := onStarted("colab:"+manifest.TaskID, map[string]any{"runtime_id": runtime.ID}); err != nil {
+			return backend.TaskOutcome{Err: err}
+		}
+	}
+	output, err := b.Executor.ExecuteNotebook(ctx, runtime, payload)
+	if err != nil {
+		return backend.TaskOutcome{Err: RedactError(b.Redactor, err)}
+	}
+	taskResult, err := DecodeTaskResult(output)
+	if err != nil {
+		return backend.TaskOutcome{Err: RedactError(b.Redactor, fmt.Errorf("%w; raw kernel output: %q", err, output))}
+	}
+	if err := b.materializeTaskLogs(ctx, taskResult, manifest, mapping, output); err != nil {
+		taskResult.ObservabilityErrors = append(taskResult.ObservabilityErrors, err.Error())
+	}
+	return backend.TaskOutcome{Result: &backend.Result{TaskResult: taskResult, BackendID: "colab:" + manifest.TaskID}}
 }
 
 func (b *Backend) materializeTaskLogs(ctx context.Context, taskResult *protocol.TaskResult, manifest *protocol.TaskManifest, mapping RemoteTaskMapping, output string) error {

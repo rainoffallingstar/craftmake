@@ -55,8 +55,9 @@ func TestNewFactoryWiresReferenceInformedBackend(t *testing.T) {
 	if err := colabBackend.BeginRun(context.Background(), backendpkg.RunContext{RunID: "run-1", ProjectDirectory: "/local/project"}); err != nil {
 		t.Fatal(err)
 	}
-	if !assigned {
-		t.Fatal("expected runtime assignment during BeginRun")
+	// In the ephemeral-instance model, BeginRun does not assign a runtime.
+	if assigned {
+		t.Fatal("BeginRun must not assign a runtime in the ephemeral-instance model")
 	}
 	if err := colabBackend.EndRun(context.Background(), backendpkg.RunOutcome{RunID: "run-1", Status: "succeeded", ProjectDirectory: "/local/project"}); err != nil {
 		t.Fatal(err)

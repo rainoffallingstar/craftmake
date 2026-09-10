@@ -35,44 +35,28 @@ func isRemoteGone(err error) bool {
 }
 
 // CancelSubmission interrupts the currently executing kernel and waits a
-// bounded grace period for it to settle. It is idempotent: if no runtime is
-// active there is nothing to cancel.
+// bounded grace period for it to settle. In the ephemeral-instance model each
+// manifest runs on its own short-lived runtime, so there is no persistent
+// runtime to interrupt here; the executor's interrupt path is exercised during
+// RunSubmission. This is an idempotent no-op.
 func (b *Backend) CancelSubmission(ctx context.Context, submissionID string, metadata map[string]any) error {
-	b.mutex.Lock()
-	runtime, active := b.runtime, b.active
-	b.mutex.Unlock()
-	if !active {
-		return nil
-	}
-	interruptor, ok := b.Executor.(NotebookInterruptor)
-	if !ok {
-		return nil // no interrupt capability; nothing to signal
-	}
-	cancelCtx, cancel := context.WithTimeout(context.Background(), KernelGracePeriod)
-	defer cancel()
-	return interruptor.Interrupt(cancelCtx, runtime)
+	return nil
 }
 
-// Cancel stops the run: it releases the assigned runtime, treating a missing
-// remote (404) as an idempotent success.
+// Cancel stops the run: it defensively releases any residual assignments,
+// treating a missing remote (404) as an idempotent success.
 func (b *Backend) Cancel(ctx context.Context) error {
-	b.mutex.Lock()
-	if !b.active {
-		b.mutex.Unlock()
-		return nil
-	}
-	runtime := b.runtime
-	b.active = false
-	b.runtime = Runtime{}
-	b.mutex.Unlock()
 	if b.Control == nil {
 		return nil
 	}
-	if err := b.Control.ReleaseRuntime(ctx, runtime); err != nil {
-		if isRemoteGone(err) {
-			return nil // already gone; keep local cancelled state
-		}
+	assignments, err := b.Control.ListAssignments(ctx)
+	if err != nil {
 		return err
+	}
+	for _, a := range assignments {
+		if releaseErr := b.Control.ReleaseRuntime(ctx, Runtime{ID: a.Endpoint}); releaseErr != nil && !isRemoteGone(releaseErr) {
+			return releaseErr
+		}
 	}
 	return nil
 }

@@ -49,7 +49,8 @@ func (f *fakeControlPlane) AcquireRuntime(context.Context, RuntimeRequest) (Runt
 	f.acquired++
 	return Runtime{ID: "runtime-1"}, nil
 }
-func (f *fakeControlPlane) ReleaseRuntime(context.Context, Runtime) error { f.released++; return nil }
+func (f *fakeControlPlane) ReleaseRuntime(context.Context, Runtime) error         { f.released++; return nil }
+func (f *fakeControlPlane) ListAssignments(context.Context) ([]Assignment, error) { return nil, nil }
 
 type fakeNotebookExecutor struct{}
 

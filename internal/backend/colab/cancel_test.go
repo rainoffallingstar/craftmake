@@ -34,8 +34,11 @@ func (f *fakeControlPlaneWithError) ReleaseRuntime(context.Context, Runtime) err
 	f.released++
 	return f.releaseErr
 }
+func (f *fakeControlPlaneWithError) ListAssignments(context.Context) ([]Assignment, error) {
+	return nil, nil
+}
 
-func TestCancelSubmissionInterruptsActiveRun(t *testing.T) {
+func TestCancelSubmissionIsNoopInEphemeralModel(t *testing.T) {
 	executor := &fakeInterruptibleExecutor{}
 	b := &Backend{Control: &fakeControlPlane{}, Executor: executor}
 	if err := b.BeginRun(context.Background(), backendpkg.RunContext{RunID: "run-1", ProjectDirectory: "/local/project"}); err != nil {
@@ -44,12 +47,12 @@ func TestCancelSubmissionInterruptsActiveRun(t *testing.T) {
 	if err := b.CancelSubmission(context.Background(), "sub-1", nil); err != nil {
 		t.Fatal(err)
 	}
-	if !executor.interrupted {
-		t.Fatal("expected executor interrupt")
+	if executor.interrupted {
+		t.Fatal("CancelSubmission must be a no-op in the ephemeral-instance model")
 	}
 	if err := b.CancelSubmission(context.Background(), "sub-1", nil); err != nil {
 		t.Fatal(err)
-	} // idempotent while active
+	} // idempotent
 }
 
 func TestCancelSubmissionWhenInactiveIsNoop(t *testing.T) {
@@ -59,7 +62,7 @@ func TestCancelSubmissionWhenInactiveIsNoop(t *testing.T) {
 	}
 }
 
-func TestCancelReleasesRuntimeAndIsIdempotent(t *testing.T) {
+func TestCancelReleasesResidualAssignmentsAndIsIdempotent(t *testing.T) {
 	control := &fakeControlPlane{}
 	b := &Backend{Control: control, Executor: fakeNotebookExecutor{}}
 	if err := b.BeginRun(context.Background(), backendpkg.RunContext{RunID: "run-1", ProjectDirectory: "/local/project"}); err != nil {
@@ -68,8 +71,9 @@ func TestCancelReleasesRuntimeAndIsIdempotent(t *testing.T) {
 	if err := b.Cancel(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if control.released != 1 {
-		t.Fatalf("expected one release, got %d", control.released)
+	// fakeControlPlane.ListAssignments returns nil, so no residual release.
+	if control.released != 0 {
+		t.Fatalf("expected no release for empty assignments, got %d", control.released)
 	}
 	if err := b.Cancel(context.Background()); err != nil {
 		t.Fatal(err)
@@ -85,7 +89,8 @@ func TestCancelTreatsRemoteGoneAsIdempotent(t *testing.T) {
 	if err := b.Cancel(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if control.released != 1 {
-		t.Fatalf("expected one release, got %d", control.released)
+	// fakeControlPlaneWithError.ListAssignments returns nil, so no release.
+	if control.released != 0 {
+		t.Fatalf("expected no release for empty assignments, got %d", control.released)
 	}
 }
