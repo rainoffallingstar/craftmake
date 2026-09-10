@@ -1403,7 +1403,11 @@ func printPlan(command *cobra.Command, plan *compiler.Plan) {
 	fmt.Fprintf(command.OutOrStdout(), "Workflow: %s\nPhase: %s\nTasks: %d\nSubmissions: %d\n\n", plan.Workflow, plan.Phase, len(plan.Tasks), len(plan.Submissions))
 	for orderIndex, taskID := range plan.Order {
 		task := plan.TaskByID[taskID]
-		fmt.Fprintf(command.OutOrStdout(), "%03d  %-8s  cores=%d  memory=%d  %s\n", orderIndex+1, task.Scope, task.Resources.Cores, task.Resources.MemoryByte, task.ID)
+		accel := task.Accelerator
+		if accel == "" {
+			accel = "-"
+		}
+		fmt.Fprintf(command.OutOrStdout(), "%03d  %-8s  accel=%-4s  cores=%d  memory=%d  %s\n", orderIndex+1, task.Scope, accel, task.Resources.Cores, task.Resources.MemoryByte, task.ID)
 		if len(task.Dependencies) > 0 {
 			fmt.Fprintf(command.OutOrStdout(), "     needs: %s\n", strings.Join(task.Dependencies, ", "))
 		}
