@@ -50,6 +50,31 @@ func TestServerControlPlaneAcquireAndReleaseMapToAssignAndUnassign(t *testing.T)
 	}
 }
 
+func TestServerControlPlanePassesAcceleratorToAssign(t *testing.T) {
+	var assignQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, TunEndpoint+"/assign") {
+			if r.Method == http.MethodGet {
+				_, _ = w.Write([]byte(`{"token":"xsrf"}`))
+				return
+			}
+			assignQuery = r.URL.RawQuery
+			_ = json.NewEncoder(w).Encode(map[string]any{"endpoint": "https://proxy.example.test", "runtimeProxyInfo": map[string]any{"token": "pt", "url": "https://proxy.example.test"}})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	client := NewColabServerClient(server.URL, server.URL, server.Client())
+	plane := &ServerControlPlane{Client: client}
+	if _, err := plane.AcquireRuntime(context.Background(), RuntimeRequest{RunID: "run-abc", Accelerator: "gpu"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(assignQuery, "accelerator=gpu") {
+		t.Fatalf("expected accelerator=gpu in assign query, got %q", assignQuery)
+	}
+}
+
 func TestProxyNotebookExecutorPostsWithProxyToken(t *testing.T) {
 	var token string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
