@@ -1,66 +1,63 @@
-# TDD：Colab 混合加速器 (CPU/GPU) 多实例调度
+# TDD：Colab 临时实例 + 持久化 Drive 混合加速器调度
 
-## 问题陈述
+## 核心洞察
 
-当前 Colab 后端采用**单实例模型**：`BeginRun` 分配一台固定加速器类型的机器，整个 Run 的所有 Submission/Task 都在同一台机器上顺序执行。这导致：
-
-1. **浪费 GPU 配额**：数据预处理、QC 等纯 CPU 任务也占用了 GPU 实例的算力配额和有限并发（Google 免费账户仅 1 个 GPU 实例）。
-2. **无法混合任务类型**：一个工作流若包含 CPU 预处理 → GPU 训练 → CPU 后处理的三阶段 DAG，只能全程使用 GPU 实例。
-3. **无法并行 CPU + GPU**：两个无依赖关系的 Job——一个跑 CPU、一个跑 GPU——无法同时在各自实例上执行。
-
-## 设计目标
-
-支持在**同一个 Action 工作流**中，按 Job 粒度声明不同的加速器类型（`cpu` / `gpu` / `tpu`），调度器根据 DAG 依赖自动：
-
-1. **按需分配实例**：CPU Job → 分配 CPU 实例；GPU Job → 分配 GPU 实例。
-2. **复用同类型实例**：同一加速器类型的连续 Job 共享同一个实例（避免反复 assign/unassign）。
-3. **支持跨类型并行**：无依赖关系的 CPU Job 和 GPU Job 可以同时在不同实例上运行。
-4. **实例生命周期自动管理**：所有实例在 `EndRun` 时保证释放（零泄漏）。
-
----
-
-## 架构方案：RuntimePool + Job-Level Accelerator
-
-### 核心概念
+Google Drive 挂载后就是工作流的**持久化共享存储层**。实例（CPU/GPU）仅仅是**临时算力容器**，用完即毁。
 
 ```text
-┌────────────────────────────────────────────────────────────┐
-│                    Action Workflow YAML                      │
-│  ┌──────────┐  ┌──────────────┐  ┌────────────────────┐    │
-│  │ preprocess│  │    train     │  │   postprocess      │    │
-│  │ accel: cpu│→ │ accel: gpu   │→ │   accel: cpu       │    │
-│  └──────────┘  └──────────────┘  └────────────────────┘    │
-└────────────────────────────────────────────────────────────┘
-                          ↓ 调度器编排
-┌─────────────────────────────────────────────────┐
-│               RuntimePool (新增组件)              │
-│  ┌──────────────────┐  ┌──────────────────────┐  │
-│  │ CPU Slot          │  │ GPU Slot              │  │
-│  │ Runtime: ...      │  │ Runtime: ...          │  │
-│  │ Idle/Active/None  │  │ Idle/Active/None      │  │
-│  └──────────────────┘  └──────────────────────┘  │
-│  ┌──────────────────┐                            │
-│  │ TPU Slot (future) │                            │
-│  │ None              │                            │
-│  └──────────────────┘                            │
-└─────────────────────────────────────────────────┘
+ Job A (cpu)              Job B (gpu)              Job C (cpu)
+ ┌────────────┐           ┌────────────┐           ┌────────────┐
+ │ Assign CPU │           │ Assign GPU │           │ Assign CPU │
+ │ Mount Drive│           │ Mount Drive│           │ Mount Drive│
+ │ Execute    │           │ Execute    │           │ Execute    │
+ │ Flush Drive│           │ Flush Drive│           │ Flush Drive│
+ │ Release    │           │ Release    │           │ Release    │
+ └─────┬──────┘           └─────┬──────┘           └────────────┘
+       │                        │
+       └── Drive: /MyDrive/proj ┘  ← 三个 Job 读写同一份 Drive 数据
 ```
 
-### 层级设计
+**与初版 RuntimePool 方案的根本区别**：
 
-| 层 | 变更 | 说明 |
+| | RuntimePool（初版） | 临时实例 + Drive（本版） |
 |---|---|---|
-| **YAML Schema** | `JobSpec.Accelerator` 新增字段 | 声明 `accelerator: cpu` / `gpu` / `tpu`，默认空（继承 Action 级别或 backend 默认） |
-| **ActionSpec** | `ColabSpec.DefaultAccelerator` | Action 级别的默认加速器类型 |
-| **compiler.Task** | `Accelerator string` 新增字段 | 编译后每个 Task 携带加速器标记 |
-| **protocol.ResourceRequest** | `Accelerator string` 新增字段 | 随 TaskManifest 下发到后端 |
-| **RuntimePool (新增)** | 替代单一 `b.runtime` | 管理多个 Colab 实例的分配/复用/释放池 |
-| **Colab Backend** | `RunSubmission` 改造 | 按 Task 的 Accelerator 字段从 RuntimePool 获取对应实例 |
-| **Scheduler** | 无核心变更 | DAG 依赖、admission 逻辑保持不变；资源标签通过 `Partition` 或 `Accelerator` 透传 |
+| 实例生命周期 | 跨 Job 复用，Run 结束统一释放 | 每个 Submission 独立分配/释放 |
+| 状态传递 | 实例本地文件系统 | Google Drive（持久化） |
+| 空闲占用 | GPU 实例在 CPU Job 执行期间空闲挂着 | **零空闲占用**——不用的实例立刻释放 |
+| GPU 配额压力 | 高（GPU 实例长期持有） | **最低**——GPU 仅在 GPU Job 执行时占用 |
+| 复杂度 | 需要 Pool 并发管理、心跳保活 | **极简**——生命周期封装在 RunSubmission 内部 |
+| 并行 CPU+GPU | 需要 Pool 同时持有两个实例 | 自然支持——调度器并发投递两个 Submission |
 
 ---
 
-## YAML Schema 示例
+## 设计方案：Submission-Scoped Ephemeral Runtime
+
+### 架构变更
+
+```text
+当前架构（单实例）：
+  BeginRun:     Assign(一台机器)
+  RunSubmission: 复用 b.runtime 执行所有 Task
+  EndRun:       Release(那台机器)
+
+新架构（临时实例）：
+  BeginRun:     仅加载配置、校验凭据（不分配任何机器）
+  RunSubmission: Assign(按 accelerator) → Mount Drive → 执行 → Flush → Release
+  EndRun:       确认无残留实例（防御性清理）
+```
+
+**关键设计决策**：实例的 Assign/Release 从 `BeginRun/EndRun` **下沉**到 `RunSubmission` 内部，形成自包含的生命周期闭环。
+
+### 核心优势
+
+1. **GPU 配额使用率最优**：GPU 实例仅在 GPU Job 运行的那几秒/几分钟内被占用，前后的 CPU Job 不浪费任何 GPU 时间。
+2. **天然兼容 Google 免费层**：免费账户同时只允许 1 个 GPU 实例——因为每个 Job 用完立刻释放，不会冲突。
+3. **极简实现**：不需要 RuntimePool、不需要心跳保活、不需要跨 Job 的实例复用逻辑。
+4. **容错隔离**：某个 Job 的实例崩溃不会污染其他 Job——下一个 Job 分配全新实例。
+
+---
+
+## YAML Schema
 
 ```yaml
 schema_version: craftmake.action/v1
@@ -68,228 +65,280 @@ name: ml_pipeline
 backend: colab
 colab:
   session: gpu
-  default_accelerator: cpu          # 未声明 accelerator 的 Job 默认跑 CPU
+  default_accelerator: cpu          # Job 未声明 accelerator 时的默认值
   drive_root: /content/drive/MyDrive/ml_pipeline
 jobs:
   preprocess:
-    accelerator: cpu                 # 显式声明：CPU 实例
+    accelerator: cpu                 # → 临时分配 CPU 实例
     steps:
       - run: |
-          python3 preprocess.py --input data/raw --output data/processed
+          python3 - << 'EOF'
+          import pandas as pd
+          # CPU 密集型预处理：数据清洗、特征工程...
+          # 结果直接写在 Drive 上
+          df = pd.read_csv('/content/drive/MyDrive/ml_pipeline/raw/data.csv')
+          df.to_parquet('/content/drive/MyDrive/ml_pipeline/processed/data.parquet')
+          EOF
 
   train:
-    accelerator: gpu                 # 显式声明：GPU 实例
-    needs: [preprocess]
+    accelerator: gpu                 # → 临时分配 GPU 实例
+    needs: [preprocess]              # 等 CPU 预处理完成后才启动
     steps:
       - run: |
-          python3 train.py --data data/processed --epochs 50 --output models/
+          python3 - << 'EOF'
+          import torch
+          # GPU 训练：从 Drive 读取预处理数据
+          # 模型检查点写回 Drive
+          print('GPU:', torch.cuda.get_device_name(0))
+          EOF
 
   evaluate:
-    accelerator: gpu                 # 继续复用 GPU 实例
+    accelerator: gpu
     needs: [train]
     steps:
-      - run: |
-          python3 evaluate.py --model models/best.pt --output results/
+      - run: python3 evaluate.py
 
   report:
-    accelerator: cpu                 # 回到 CPU 实例
+    accelerator: cpu                 # → 临时分配 CPU 实例
     needs: [evaluate]
     steps:
-      - run: |
-          python3 generate_report.py --results results/ --output report/
+      - run: python3 generate_report.py
 ```
 
-### 并行 CPU + GPU 示例
+### 并行 CPU + GPU
 
 ```yaml
 jobs:
-  data_qc:                           # CPU 实例
-    accelerator: cpu
+  data_qc:
+    accelerator: cpu                 # CPU 实例 ①
     steps:
-      - run: fastqc --threads 4 data/*.fastq.gz
+      - run: fastqc data/*.fastq.gz
 
-  gpu_precompute:                    # GPU 实例（与 data_qc 并行执行）
-    accelerator: gpu
+  gpu_precompute:
+    accelerator: gpu                 # GPU 实例 ②（与 data_qc 同时运行）
     steps:
-      - run: python3 precompute_embeddings.py
+      - run: python3 precompute.py
 
-  final_analysis:                    # CPU 实例（等两者都完成）
-    accelerator: cpu
+  integrate:
+    accelerator: cpu                 # CPU 实例 ③（等 ①② 都结束才启动）
     needs: [data_qc, gpu_precompute]
     steps:
       - run: python3 integrate.py
 ```
 
+调度器的 DAG 依赖 + admission 自然保证：
+- `data_qc` 和 `gpu_precompute` 无依赖 → 调度器并发投递
+- 它们分别申请 CPU 和 GPU 实例 → Google 允许同时 1 CPU + 1 GPU
+- `integrate` 等两者都完成才启动
+
 ---
 
 ## TDD 切片清单
 
-### Phase 1: 数据模型扩展（纯离线，无网络调用）
+### Phase 1: 数据模型扩展（纯离线）
 
-| # | 测试名 | 验证内容 | 涉及文件 |
+| # | 测试名 | 红→绿内容 | 涉及文件 |
 |---|---|---|---|
-| 1.1 | `TestJobSpecAcceleratorField` | `spec.JobSpec` 可反序列化 `accelerator: gpu` 字段 | `internal/spec/model.go` |
-| 1.2 | `TestJobSpecAcceleratorDefault` | 未声明 `accelerator` 的 Job 字段为空字符串 | `internal/spec/model.go` |
-| 1.3 | `TestJobSpecAcceleratorValidation` | 非法值（如 `accelerator: quantum`）编译时拒绝 | `internal/spec/model.go` |
-| 1.4 | `TestResourceRequestAccelerator` | `protocol.ResourceRequest` 序列化/反序列化携带 `accelerator` | `pkg/protocol/types.go` |
-| 1.5 | `TestTaskCarriesAccelerator` | 编译后的 `compiler.Task` 带 `Accelerator` 字段 | `internal/compiler/model.go`, `compiler.go` |
-| 1.6 | `TestActionColabDefaultAccelerator` | `ColabSpec.DefaultAccelerator` 可解析并回填未声明的 Job | `internal/adapters/action/loader.go` |
+| 1.1 | `TestJobSpecAcceleratorField` | `spec.JobSpec` 新增 `Accelerator string` 字段，YAML 反序列化 `accelerator: gpu` | `internal/spec/model.go` |
+| 1.2 | `TestJobSpecAcceleratorValidation` | 合法值：`""`, `"cpu"`, `"gpu"`, `"tpu"`；非法值（如 `"quantum"`）返回错误 | `internal/spec/model.go` |
+| 1.3 | `TestResourceRequestAccelerator` | `protocol.ResourceRequest` 新增 `Accelerator` 字段，JSON 往返保真 | `pkg/protocol/types.go` |
+| 1.4 | `TestTaskCarriesAccelerator` | 编译后 `compiler.Task.Accelerator` = Job 声明值 | `internal/compiler/model.go`, `compiler.go` |
+| 1.5 | `TestActionDefaultAccelerator` | `ColabSpec.DefaultAccelerator` 回填到未声明 `accelerator` 的 Job | `internal/adapters/action/loader.go` |
+| 1.6 | `TestManifestCarriesAccelerator` | `TaskManifest.Resources.Accelerator` 随 Manifest 下发 | `internal/scheduler/scheduler.go` |
 
-### Phase 2: RuntimePool 核心（纯单元测试，Mock ControlPlane）
+### Phase 2: RunSubmission 自包含生命周期（Mock ControlPlane + Executor）
 
-| # | 测试名 | 验证内容 | 涉及文件 |
+| # | 测试名 | 红→绿内容 | 涉及文件 |
 |---|---|---|---|
-| 2.1 | `TestRuntimePoolAcquireCPU` | 请求 CPU 加速器 → Pool 调用 `ControlPlane.AcquireRuntime` 创建 CPU 实例 | `internal/backend/colab/runtime_pool.go` (新) |
-| 2.2 | `TestRuntimePoolAcquireGPU` | 请求 GPU 加速器 → Pool 用 `Accelerator: "GPU"` 参数请求实例 | 同上 |
-| 2.3 | `TestRuntimePoolReuseSameType` | 连续两次请求 CPU → 第二次复用已有实例（不重新 Assign） | 同上 |
-| 2.4 | `TestRuntimePoolDifferentTypes` | 先请求 CPU 再请求 GPU → 两个不同实例共存 | 同上 |
-| 2.5 | `TestRuntimePoolConcurrentAcquire` | 并发请求同一类型 → 串行等待同一实例（不重复分配） | 同上 |
-| 2.6 | `TestRuntimePoolReleaseAll` | `ReleaseAll` 释放池中所有实例，释放后再 Acquire 需重新分配 | 同上 |
-| 2.7 | `TestRuntimePoolReleaseAllIdempotent` | 多次 `ReleaseAll` 不 panic、不重复调用 Unassign | 同上 |
-| 2.8 | `TestRuntimePoolAcquireAfterContextCancel` | 上下文取消时 Acquire 立即返回错误 | 同上 |
-| 2.9 | `TestRuntimePoolFailedAcquireDoesNotPoison` | 第一次 Assign 失败后，第二次仍可重试（不缓存失败实例） | 同上 |
+| 2.1 | `TestRunSubmissionAssignsPerAccelerator` | RunSubmission 内部按 Manifest.Accelerator 调用 `AcquireRuntime` 传入对应 accelerator | `internal/backend/colab/backend.go` |
+| 2.2 | `TestRunSubmissionMountsDrive` | 每次 Assign 后自动触发 Drive 挂载（bootstrap 注入 `drive.mount`） | 同上 + `notebook.go` |
+| 2.3 | `TestRunSubmissionReleaseAfterExecution` | 每个 Manifest 执行完毕后立即调用 `ReleaseRuntime` | 同上 |
+| 2.4 | `TestRunSubmissionReleaseOnFailure` | 执行失败也保证 Release（defer 语义） | 同上 |
+| 2.5 | `TestRunSubmissionDefaultAccelerator` | Manifest 无 Accelerator → 使用 `Config.DefaultAccelerator` (`"cpu"`) | 同上 |
+| 2.6 | `TestRunSubmissionCPUThenGPU` | 两个 Manifest 顺序：CPU→GPU → 分别 Assign/Release 两次 | 同上 |
+| 2.7 | `TestRunSubmissionConsecutiveSameType` | 两个 CPU Manifest → 分别独立 Assign/Release（不复用，因为 Drive 是持久层） | 同上 |
 
-### Phase 3: Backend 集成（Mock Executor + Pool）
+### Phase 3: BeginRun/EndRun 重构
 
-| # | 测试名 | 验证内容 | 涉及文件 |
+| # | 测试名 | 红→绿内容 | 涉及文件 |
 |---|---|---|---|
-| 3.1 | `TestRunSubmissionRoutesByAccelerator` | 两个 Manifest（CPU+GPU）分别在不同 Runtime 上执行 | `internal/backend/colab/backend.go` |
-| 3.2 | `TestRunSubmissionDefaultAccelerator` | Manifest 无 Accelerator → 使用 `Config.DefaultAccelerator` | 同上 |
-| 3.3 | `TestRunSubmissionSameAcceleratorReuses` | 两个 GPU Manifest 顺序执行 → 共用同一个 GPU Runtime | 同上 |
-| 3.4 | `TestEndRunReleasesAllRuntimes` | EndRun 后 Pool 中所有实例被释放 | 同上 |
-| 3.5 | `TestRunSubmissionPartialFailure` | GPU Manifest 失败不影响后续 CPU Manifest 执行 | 同上 |
-| 3.6 | `TestBeginRunCreatesPool` | BeginRun 初始化空 RuntimePool（替代单一 runtime 字段） | 同上 |
+| 3.1 | `TestBeginRunNoAssignment` | `BeginRun` 不再调用 `AcquireRuntime`（仅校验配置和凭据） | `backend.go` |
+| 3.2 | `TestBeginRunValidatesCredentials` | `BeginRun` 仍然加载 session auth、校验 token 存在性 | 同上 |
+| 3.3 | `TestEndRunDefensiveCleanup` | `EndRun` 调用 `ListAssignments` 清理残留实例（防御性） | 同上 |
+| 3.4 | `TestEndRunNoopWhenClean` | 无残留实例时 `EndRun` 无副作用 | 同上 |
 
-### Phase 4: 端到端 Action 集成
+### Phase 4: RuntimeRequest 扩展
 
-| # | 测试名 | 验证内容 | 涉及文件 |
+| # | 测试名 | 红→绿内容 | 涉及文件 |
 |---|---|---|---|
-| 4.1 | `TestActionPlanShowsAccelerator` | `action plan` 输出中显示每个 Task 的加速器标签 | `internal/cli/action.go` |
-| 4.2 | `TestActionRunMixedAcceleratorOffline` | 离线 Mock：混合 Action YAML → 编译 → 正确路由到不同 Runtime | `internal/cli/action_test.go` |
-| 4.3 | `TestColabSpecDefaultAcceleratorRendering` | `default_accelerator: cpu` → 未声明的 Job 获得 `cpu` | `internal/adapters/action/action_test.go` |
+| 4.1 | `TestRuntimeRequestAccelerator` | `RuntimeRequest` 新增 `Accelerator` 字段 | `backend.go` (接口) |
+| 4.2 | `TestServerControlPlanePassesAccelerator` | `ServerControlPlane.AcquireRuntime` 将 Accelerator 映射到 `RuntimeSpec.Accelerator` | `adapter.go` |
+| 4.3 | `TestAssignWithGPUAccelerator` | `Assign(RuntimeSpec{Accelerator: "GPU"})` → URL 带 `&accelerator=GPU` | `colab_server.go` |
 
-### Phase 5: 实机验证（可选，需 Colab 凭据）
+### Phase 5: 端到端 Action 测试
 
-| # | 测试名 | 验证内容 | 涉及文件 |
+| # | 测试名 | 红→绿内容 | 涉及文件 |
 |---|---|---|---|
-| 5.1 | `TestLiveCPUThenGPU` | 真实分配 CPU 实例 → 执行 → 释放 → 分配 GPU 实例 → 执行 → 释放 | 实机探针测试 |
-| 5.2 | `TestLiveParallelCPUGPU` | 并发分配 CPU + GPU → 并行执行 → 全部释放 | 同上 |
+| 5.1 | `TestActionPlanShowsAccelerator` | `action plan` 输出显示每个 Task 的加速器标签 | `internal/cli/action.go` |
+| 5.2 | `TestMixedPipelineOffline` | 3-Job DAG (cpu→gpu→cpu) 离线编译 → 正确编排 | `internal/cli/action_test.go` |
+| 5.3 | `TestParallelAcceleratorOffline` | 2 并行 Job (cpu∥gpu) + 1 合并 Job → 编译顺序正确 | 同上 |
+
+### Phase 6: 实机验证（可选）
+
+| # | 测试名 | 验证内容 |
+|---|---|---|
+| 6.1 | `TestLiveCPUJobWritesDrive` | CPU 实例执行 → 写 Drive → 释放 → 验证文件在 Drive 上 |
+| 6.2 | `TestLiveGPUJobReadsDriveOutput` | GPU 实例执行 → 从 Drive 读取上一步结果 → 写回 Drive |
+| 6.3 | `TestLiveMixedPipeline` | 完整 cpu→gpu→cpu 三阶段在真实 Colab 上执行 |
 
 ---
 
-## RuntimePool 接口设计
+## 关键代码变更
+
+### 1. RunSubmission 重构（核心变更）
 
 ```go
-// runtime_pool.go (new file)
-package colab
+func (b *Backend) RunSubmission(ctx context.Context, submissionID string, request backend.SubmissionRequest) (*backend.SubmissionResult, error) {
+    result := &backend.SubmissionResult{BackendID: "colab:" + submissionID, Tasks: map[string]backend.TaskOutcome{}}
 
-import (
-    "context"
-    "fmt"
-    "sync"
-)
+    for _, manifest := range request.Manifests {
+        if err := ctx.Err(); err != nil {
+            return result, err
+        }
 
-// RuntimePool manages a set of Colab runtimes keyed by accelerator type.
-// It lazily acquires instances on first request and reuses them for subsequent
-// requests of the same type. All instances are released together on ReleaseAll.
-type RuntimePool struct {
-    control   ControlPlane
-    runID     string
-    notebookHash string
+        // 1. 确定加速器类型
+        accelerator := manifest.Resources.Accelerator
+        if accelerator == "" {
+            accelerator = b.Config.DefaultAccelerator
+        }
+        if accelerator == "" {
+            accelerator = "cpu"
+        }
 
-    mu        sync.Mutex
-    runtimes  map[string]*poolEntry   // key: accelerator ("cpu", "gpu", "tpu")
-    released  bool
+        // 2. 按需分配临时实例
+        runtime, err := b.Control.AcquireRuntime(ctx, RuntimeRequest{
+            RunID:       manifest.RunID,
+            Accelerator: accelerator,
+        })
+        if err != nil {
+            result.Tasks[manifest.TaskID] = backend.TaskOutcome{Err: err}
+            continue
+        }
+
+        // 3. 执行（Drive 在 bootstrapSource 中自动挂载）
+        outcome := b.executeOnRuntime(ctx, runtime, manifest, request.OnStarted)
+
+        // 4. 立即释放实例——Drive 数据已持久化
+        if releaseErr := b.Control.ReleaseRuntime(ctx, runtime); releaseErr != nil {
+            // 记录但不覆盖执行结果
+            if outcome.Err == nil {
+                outcome.Err = fmt.Errorf("release runtime: %w", releaseErr)
+            }
+        }
+
+        result.Tasks[manifest.TaskID] = outcome
+    }
+    return result, nil
 }
-
-type poolEntry struct {
-    runtime  Runtime
-    ready    bool
-    mu       sync.Mutex           // serializes concurrent Acquire for same type
-}
-
-// Acquire returns a Runtime for the given accelerator type, reusing an existing
-// one or lazily allocating a new one. It is safe for concurrent use.
-func (p *RuntimePool) Acquire(ctx context.Context, accelerator string) (Runtime, error)
-
-// ReleaseAll releases all acquired runtimes. It is idempotent and safe to call
-// multiple times. After ReleaseAll, Acquire returns an error.
-func (p *RuntimePool) ReleaseAll(ctx context.Context) error
-
-// ActiveCount returns the number of currently held runtimes.
-func (p *RuntimePool) ActiveCount() int
 ```
 
-## Backend 改造要点
+### 2. BeginRun 简化
 
 ```go
-// backend.go — BeginRun 改造
-type Backend struct {
-    // ...existing fields...
-    // runtime    Runtime              // 移除：单实例字段
-    // active     bool                  // 移除
-    pool       *RuntimePool            // 新增：多实例池
-    defaultAccelerator string           // 新增：默认加速器类型
-}
-
 func (b *Backend) BeginRun(ctx context.Context, run backend.RunContext) error {
-    // ...existing config loading...
-    b.pool = NewRuntimePool(b.Control, run.RunID, notebookHash)
-    b.defaultAccelerator = config.DefaultAccelerator
-    if b.defaultAccelerator == "" {
-        b.defaultAccelerator = "cpu"
+    // 仅加载配置——不分配任何机器
+    config := b.Config
+    // ...load session auth, set DriveRoot/MountPath...
+    b.Config = config
+
+    // 校验凭据可用（refresh token 能刷到 access token）
+    if b.Control != nil {
+        if err := b.Control.ValidateCredentials(ctx); err != nil {
+            return fmt.Errorf("Colab credentials invalid: %w", err)
+        }
     }
-    // 注意：不再在 BeginRun 中 Assign！延迟到 RunSubmission 按需分配。
     return nil
 }
-
-// RunSubmission — 按 Task Accelerator 获取实例
-func (b *Backend) RunSubmission(ctx context.Context, submissionID string, request backend.SubmissionRequest) (*backend.SubmissionResult, error) {
-    for _, manifest := range request.Manifests {
-        accel := manifest.Resources.Accelerator
-        if accel == "" {
-            accel = b.defaultAccelerator
-        }
-        runtime, err := b.pool.Acquire(ctx, accel)
-        // ...execute on this specific runtime...
-    }
-}
-
-// EndRun — 释放所有实例
-func (b *Backend) EndRun(ctx context.Context, outcome backend.RunOutcome) error {
-    return b.pool.ReleaseAll(ctx)
-}
 ```
 
-## ResourceRequest 扩展
+### 3. EndRun 防御性清理
 
 ```go
-// pkg/protocol/types.go
-type ResourceRequest struct {
-    Cores       int    `json:"cores"`
-    MemoryByte  int64  `json:"memory_bytes"`
-    Partition   string `json:"partition,omitempty"`
-    Time        string `json:"time,omitempty"`
-    Accelerator string `json:"accelerator,omitempty"`   // 新增: "cpu", "gpu", "tpu"
+func (b *Backend) EndRun(ctx context.Context, outcome backend.RunOutcome) error {
+    // 防御性：扫描并释放任何残留实例
+    assignments, err := b.Control.ListAssignments(ctx)
+    if err != nil {
+        return fmt.Errorf("list residual assignments: %w", err)
+    }
+    for _, a := range assignments {
+        _ = b.Control.ReleaseRuntime(ctx, Runtime{ID: a.Endpoint})
+    }
+    return nil
 }
 ```
 
-## Google Colab 免费层约束与应对
+### 4. notebook.go bootstrapSource 增强
 
-| 约束 | 应对策略 |
-|---|---|
-| 免费账户仅 1 个 GPU 实例 | RuntimePool 按类型串行：同时只有 1 个 GPU 实例，但可同时有 1 个 CPU 实例 |
-| Colab Pro 支持多 GPU | RuntimePool 可扩展为按类型设置并发上限 |
-| 实例空闲回收 | RuntimePool 可选心跳保活（`sendKeepAlive`） |
-| HTTP 412 配额冲突 | 复用现有 412 → ListAssignments → 自动清理逻辑 |
+每个 Job 都是新实例，所以 **每次都需要挂载 Drive**：
+
+```go
+func bootstrapSource(mapping RemoteTaskMapping) string {
+    // 始终注入 Drive 挂载（因为每次都是新实例）
+    mountBlock := `if not os.path.ismount('/content/drive'):
+    try:
+        from google.colab import drive
+        drive.mount('/content/drive', force_remount=False)
+    except Exception as _e:
+        print(f"drive.mount: {_e}")`
+
+    // ...rest of bootstrap...
+}
+```
+
+同样，finalizerSource 增加 flush：
+
+```go
+func finalizerSource(...) string {
+    // 在写入 result.json 之后、退出之前 flush Drive
+    flush := `
+try:
+    from google.colab import drive
+    drive.flush_and_unmount()
+except:
+    pass
+`
+    // ...
+}
+```
 
 ---
 
-## 实施顺序（推荐）
+## 实施顺序
 
 ```text
-Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5
-(模型)    (Pool)    (集成)    (Action)   (实机)
+Phase 1 (模型)
+  │
+  ├── 1.1~1.6: spec/protocol/compiler 加 Accelerator 字段
+  │
+Phase 2 (RunSubmission 重构) ← 核心变更
+  │
+  ├── 2.1~2.7: RunSubmission 内部 Assign→Execute→Release 闭环
+  │
+Phase 3 (BeginRun/EndRun 重构)
+  │
+  ├── 3.1~3.4: BeginRun 不再 Assign、EndRun 防御性清理
+  │
+Phase 4 (RuntimeRequest 扩展)
+  │
+  ├── 4.1~4.3: Accelerator 参数从 Manifest 传到 Colab API
+  │
+Phase 5 (端到端 Action)
+  │
+  ├── 5.1~5.3: action plan/run 显示和路由加速器标签
+  │
+Phase 6 (实机验证)
+  │
+  └── 6.1~6.3: 真实 CPU→GPU→CPU 三阶段 Drive 数据流
 ```
 
-每个 Phase 独立可测试、独立可提交，最小化每次变更的风险半径。
+每个 Phase 通过 `go test ./...` 后独立提交，不合并到 main。
