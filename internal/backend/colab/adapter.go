@@ -27,17 +27,20 @@ func (c *ServerControlPlane) AcquireRuntime(ctx context.Context, request Runtime
 		spec.NotebookHash = notebookHash(request.RunID)
 	}
 	// Map the abstract accelerator type ("cpu"/"gpu"/"tpu") to the Colab
-	// variant ("DEFAULT"/"GPU"/"TPU"). A specific GPU model (e.g. "T4") is
-	// passed through as the accelerator. "cpu" means no variant/accelerator.
+	// variant and accelerator parameters. Colab API requires variant=GPU
+	// combined with accelerator=T4 for standard GPU machines; variant=GPU alone
+	// is rejected with HTTP 400. "cpu" maps to empty variant/accelerator (DEFAULT).
 	switch request.Accelerator {
 	case "gpu":
 		spec.Variant = "GPU"
+		spec.Accelerator = "T4"
 	case "tpu":
 		spec.Variant = "TPU"
 	case "cpu", "":
 		spec.Variant = ""
 		spec.Accelerator = ""
 	default:
+		spec.Variant = "GPU"
 		spec.Accelerator = request.Accelerator
 	}
 	assignment, err := c.Client.Assign(ctx, spec)

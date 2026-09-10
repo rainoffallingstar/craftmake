@@ -112,27 +112,52 @@ func buildColabBackend(ctx context.Context, config colabBackendConfig) (backend.
 		manager.SetRefreshToken(refreshToken)
 		client.GetAccessToken = func() (string, error) { return manager.AccessToken(context.Background()) }
 	}
-	executor := &colabpkg.JupyterWebSocketExecutor{
+	var executor *colabpkg.JupyterWebSocketExecutor
+	executor = &colabpkg.JupyterWebSocketExecutor{
 		SessionID:   config.SessionID,
 		ColabClient: client,
 		AuthConsentHandler: func(ctx context.Context, authType, redirectURI string) error {
-			fmt.Printf("\n[Colab] Google Drive authorization required for this runtime.\nOpen this URL in your browser to grant Drive access to Colab:\n%s\n\nWaiting for authorization (press Enter once authorized in browser)...\n", redirectURI)
+			fmt.Printf("\n[Colab] Google Drive authorization required for this runtime.\nOpen this URL in your browser to grant Drive access to Colab:\n%s\n\nWaiting for authorization (press Enter once authorized in browser, or wait for auto-detection)...\n", redirectURI)
 			_ = openBrowser(redirectURI)
 
 			enterCh := make(chan struct{}, 1)
 			go func() {
 				var buf [1]byte
-				_, _ = os.Stdin.Read(buf[:])
-				enterCh <- struct{}{}
+				n, err := os.Stdin.Read(buf[:])
+				if n > 0 && err == nil {
+					enterCh <- struct{}{}
+				}
 			}()
 
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-enterCh:
-				return nil
-			case <-time.After(3 * time.Minute):
-				return fmt.Errorf("authorization timed out after 3 minutes")
+			timeout := 3 * time.Minute
+			if envTimeout := os.Getenv("CRAFTMAKE_COLAB_AUTH_TIMEOUT"); envTimeout != "" {
+				if d, err := time.ParseDuration(envTimeout); err == nil && d > 0 {
+					timeout = d
+				}
+			}
+
+			deadline := time.Now().Add(timeout)
+			ticker := time.NewTicker(3 * time.Second)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-enterCh:
+					return nil
+				case <-ticker.C:
+					if time.Now().After(deadline) {
+						return fmt.Errorf("authorization timed out after %v", timeout)
+					}
+					if executor != nil && executor.Endpoint != "" {
+						res, err := client.PropagateCredentials(ctx, executor.Endpoint, authType, false)
+						if err == nil && res.Success {
+							fmt.Println("\n[Colab] Google Drive authorization detected and completed successfully!")
+							return nil
+						}
+					}
+				}
 			}
 		},
 	}

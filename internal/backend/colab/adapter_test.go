@@ -57,10 +57,11 @@ func TestServerControlPlaneMapsAcceleratorToVariant(t *testing.T) {
 		wantVariant string
 		wantAccel   string
 	}{
-		{"gpu", "GPU", ""},
+		{"gpu", "GPU", "T4"},
 		{"tpu", "TPU", ""},
 		{"cpu", "", ""},
 		{"", "", ""},
+		{"A100", "GPU", "A100"},
 	}
 	for _, tc := range cases {
 		var assignQuery string
