@@ -33,15 +33,16 @@ type ActionSpec struct {
 }
 
 type ColabSpec struct {
-	Session     string            `yaml:"session,omitempty"`
-	AuthConfig  string            `yaml:"auth_config,omitempty"`
-	DriveRoot   string            `yaml:"drive_root,omitempty"`
-	RemoteRoot  string            `yaml:"remote_root,omitempty"`
-	ScratchRoot string            `yaml:"scratch_root,omitempty"`
-	SyncIn      bool              `yaml:"sync_in,omitempty"`
-	SyncOut     bool              `yaml:"sync_out,omitempty"`
-	Excludes    []string          `yaml:"excludes,omitempty"`
-	PathMap     map[string]string `yaml:"path_map,omitempty"`
+	Session            string            `yaml:"session,omitempty"`
+	AuthConfig         string            `yaml:"auth_config,omitempty"`
+	DriveRoot          string            `yaml:"drive_root,omitempty"`
+	RemoteRoot         string            `yaml:"remote_root,omitempty"`
+	ScratchRoot        string            `yaml:"scratch_root,omitempty"`
+	DefaultAccelerator string            `yaml:"default_accelerator,omitempty"`
+	SyncIn             bool              `yaml:"sync_in,omitempty"`
+	SyncOut            bool              `yaml:"sync_out,omitempty"`
+	Excludes           []string          `yaml:"excludes,omitempty"`
+	PathMap            map[string]string `yaml:"path_map,omitempty"`
 }
 
 type Loaded struct {
@@ -213,9 +214,16 @@ func resolveInputs(declarations map[string]InputSpec, overrides map[string]strin
 func normalizeWorkflow(action ActionSpec, inputs, env, environment map[string]string) (*spec.WorkflowSpec, error) {
 	values := parameterValues(inputs, environment)
 	workflow := &spec.WorkflowSpec{Name: action.Name, Version: spec.CurrentVersion, On: spec.TriggerSpec{Otter: spec.OtterTrigger{Workflow: action.Name, Phase: "main", Modes: []string{"STANDALONE"}}}, Defaults: spec.DefaultsSpec{Env: cloneMap(env)}, Jobs: map[string]spec.JobSpec{}}
+	defaultAccelerator := ""
+	if action.Colab != nil {
+		defaultAccelerator = action.Colab.DefaultAccelerator
+	}
 	for jobID, original := range action.Jobs {
 		job := original
 		job.Scope = "global"
+		if job.Accelerator == "" {
+			job.Accelerator = defaultAccelerator
+		}
 		var err error
 		if job.Env, err = renderMap(job.Env, values); err != nil {
 			return nil, fmt.Errorf("job %s env: %w", jobID, err)

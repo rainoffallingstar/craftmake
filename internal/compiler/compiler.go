@@ -144,7 +144,7 @@ func compileTaskSkeleton(workflow *spec.WorkflowSpec, jobID string, job spec.Job
 	if err != nil {
 		return nil, fmt.Errorf("job %q resources: %w", jobID, err)
 	}
-	resources := protocol.ResourceRequest{Cores: job.Resources.Cores, MemoryByte: memoryBytes, Partition: job.Resources.Partition, Time: job.Resources.Time}
+	resources := protocol.ResourceRequest{Cores: job.Resources.Cores, MemoryByte: memoryBytes, Partition: job.Resources.Partition, Time: job.Resources.Time, Accelerator: job.Accelerator}
 	if phaseEnvelope, declared := context.Execution.PhaseResources[workflow.On.Otter.Phase]; declared && resources.Time == "" {
 		resources.Time = phaseEnvelope.Time
 	}
@@ -189,7 +189,7 @@ func compileTaskSkeleton(workflow *spec.WorkflowSpec, jobID string, job spec.Job
 		maxAttempts = 1
 	}
 	compressSuccessLogs := resolveBoolean(job.Observability.CompressSuccessLogs, workflow.Defaults.Observability.CompressSuccessLogs, true)
-	return &Task{ID: stableTaskID(workflow.On.Otter.Workflow, workflow.On.Otter.Phase, jobID, dimensions), JobID: jobID, JobName: name, Workflow: workflow.On.Otter.Workflow, Phase: workflow.On.Otter.Phase, Scope: job.Scope, Dimensions: dimensions, Inputs: make(map[string][]string), Outputs: outputs, Resources: resources, Worker: workerPlan, Environment: choose(job.Environment, workflow.Defaults.Environment), Env: mergeMaps(workflow.Defaults.Env, job.Env), MaxAttempts: maxAttempts, CompressSuccessLogs: compressSuccessLogs}, nil
+	return &Task{ID: stableTaskID(workflow.On.Otter.Workflow, workflow.On.Otter.Phase, jobID, dimensions), JobID: jobID, JobName: name, Workflow: workflow.On.Otter.Workflow, Phase: workflow.On.Otter.Phase, Scope: job.Scope, Accelerator: job.Accelerator, Dimensions: dimensions, Inputs: make(map[string][]string), Outputs: outputs, Resources: resources, Worker: workerPlan, Environment: choose(job.Environment, workflow.Defaults.Environment), Env: mergeMaps(workflow.Defaults.Env, job.Env), MaxAttempts: maxAttempts, CompressSuccessLogs: compressSuccessLogs}, nil
 }
 
 func compileSteps(defaults spec.DefaultsSpec, job spec.JobSpec, values map[string]any) ([]protocol.StepManifest, error) {

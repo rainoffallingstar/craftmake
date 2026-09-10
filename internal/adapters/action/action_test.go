@@ -9,6 +9,33 @@ import (
 	"github.com/fallingstar10/craftmake/internal/spec"
 )
 
+func TestActionDefaultAccelerator(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, ".craftmake", "accel.yaml")
+	if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("schema_version: craftmake.action/v1\nname: accel\nbackend: colab\ncolab:\n  session: gpu\n  default_accelerator: cpu\njobs:\n  pre:\n    steps:\n      - run: echo pre\n  train:\n    accelerator: gpu\n    steps:\n      - run: echo train\n")
+	if err := os.WriteFile(source, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(source, nil, root, filepath.Join(root, ".craftmake", "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Action.Colab == nil || loaded.Action.Colab.DefaultAccelerator != "cpu" {
+		t.Fatalf("default_accelerator not parsed: %#v", loaded.Action.Colab)
+	}
+	// Job without accelerator should inherit default
+	if got := loaded.Workflow.Jobs["pre"].Accelerator; got != "cpu" {
+		t.Fatalf("job pre accelerator = %q, want cpu (inherited default)", got)
+	}
+	// Job with explicit accelerator should keep it
+	if got := loaded.Workflow.Jobs["train"].Accelerator; got != "gpu" {
+		t.Fatalf("job train accelerator = %q, want gpu", got)
+	}
+}
+
 func TestLoadNormalizesSelfContainedAction(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, ".craftmake", "build.yaml")
