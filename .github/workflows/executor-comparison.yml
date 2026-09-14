@@ -17,7 +17,6 @@ jobs:
     timeout-minutes: 30
     env:
       ENVA_COMMIT: d93b7fc7c82593dcaffa56f28b50aad02cca1108
-      RATTLER_CACHE_DIR: ${{ runner.temp }}/rattler-cache
     steps:
       - name: Checkout craftmake
         uses: actions/checkout@v4
@@ -55,6 +54,7 @@ jobs:
       - name: Create Snakemake environment through enva
         run: |
           set -euo pipefail
+          export RATTLER_CACHE_DIR="${RUNNER_TEMP:-/tmp}/rattler-cache"
           mkdir -p "$RATTLER_CACHE_DIR"
           .ci/enva/target/release/enva create \
             --yaml testdata/ci/snakemake-env.yaml \
