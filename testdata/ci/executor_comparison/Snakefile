@@ -1,6 +1,12 @@
 import os
 
-SAMPLES = config.get("samples", ["sampleA", "sampleB"])
+# The comparison shares one config file with the Craftmake arm, where samples are declared as
+# `- id: sampleA`. Snakemake needs the bare sample identifiers, so normalise either form.
+_declared_samples = config.get("samples", ["sampleA", "sampleB"])
+SAMPLES = [
+    entry["id"] if isinstance(entry, dict) and "id" in entry else str(entry)
+    for entry in _declared_samples
+]
 
 rule all:
     input:
