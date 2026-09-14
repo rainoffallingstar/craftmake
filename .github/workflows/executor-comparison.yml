@@ -1,0 +1,122 @@
+name: Craftmake vs Snakemake Executor Comparison
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  executor-parity:
+    name: Local backend executor parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ENVA_COMMIT: d93b7fc7c82593dcaffa56f28b50aad02cca1108
+      RATTLER_CACHE_DIR: ${{ runner.temp }}/rattler-cache
+    steps:
+      - name: Checkout craftmake
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned enva
+        uses: actions/checkout@v4
+        with:
+          repository: rainoffallingstar/enva
+          ref: ${{ env.ENVA_COMMIT }}
+          path: .ci/enva
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Prepare evidence directories
+        run: mkdir -p ci-artifacts/{craftmake_run,snakemake_run,evidence,logs}
+
+      - name: Build craftmake and enva
+        run: |
+          set -euo pipefail
+          go build -buildvcs=false -o ci-artifacts/craftmake ./cmd/craftmake
+          (cd .ci/enva && cargo build --release --locked --bin enva) 2>&1 | tee ci-artifacts/logs/enva-build.log
+
+      - name: Create Snakemake environment through enva
+        run: |
+          set -euo pipefail
+          mkdir -p "$RATTLER_CACHE_DIR"
+          .ci/enva/target/release/enva create \
+            --yaml testdata/ci/snakemake-env.yaml \
+            --name otter-snakemake \
+            --force \
+            --output summary \
+            2>&1 | tee ci-artifacts/logs/enva-create-snakemake.log
+          .ci/enva/target/release/enva run --name otter-snakemake \
+            --command 'snakemake --version' \
+            2>&1 | tee ci-artifacts/logs/snakemake-version.log
+          grep -q '^9\.' ci-artifacts/logs/snakemake-version.log
+
+      - name: Prepare shared project fixtures
+        run: |
+          set -euo pipefail
+          cp testdata/ci/executor_comparison/config.yaml ci-artifacts/craftmake_run/config.yaml
+          cp testdata/ci/executor_comparison/config.yaml ci-artifacts/snakemake_run/config.yaml
+
+      - name: Execute workflow under Craftmake (local backend)
+        run: |
+          set -euo pipefail
+          ./ci-artifacts/craftmake run \
+            --workflow "$GITHUB_WORKSPACE/testdata/ci/executor_comparison/workflow.yaml" \
+            --config "$GITHUB_WORKSPACE/ci-artifacts/craftmake_run/config.yaml" \
+            --project-dir "$GITHUB_WORKSPACE/ci-artifacts/craftmake_run" \
+            --backend local \
+            --max-cores 2 \
+            2>&1 | tee ci-artifacts/logs/craftmake-run.log
+
+      - name: Execute workflow under Snakemake (local backend via enva)
+        run: |
+          set -euo pipefail
+          .ci/enva/target/release/enva run --name otter-snakemake \
+            --command "snakemake --snakefile $GITHUB_WORKSPACE/testdata/ci/executor_comparison/Snakefile --configfile $GITHUB_WORKSPACE/ci-artifacts/snakemake_run/config.yaml --directory $GITHUB_WORKSPACE/ci-artifacts/snakemake_run --cores 2" \
+            2>&1 | tee ci-artifacts/logs/snakemake-run.log
+
+      - name: Compare executor outputs and assert byte-for-byte equivalence
+        run: |
+          set -euo pipefail
+          python3 testdata/ci/executor_comparison/compare_executors.py \
+            --craftmake-dir ci-artifacts/craftmake_run \
+            --snakemake-dir ci-artifacts/snakemake_run \
+            --report ci-artifacts/evidence/executor-parity-report.json \
+            2>&1 | tee ci-artifacts/logs/comparison.log
+
+      - name: Remove Snakemake environment through enva
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -x .ci/enva/target/release/enva ]; then
+            if .ci/enva/target/release/enva validate --name otter-snakemake \
+              > ci-artifacts/logs/enva-pre-remove-validate.log 2>&1; then
+              .ci/enva/target/release/enva remove otter-snakemake \
+                2>&1 | tee ci-artifacts/logs/enva-remove.log
+            fi
+          fi
+
+      - name: Upload executor comparison evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: craftmake-snakemake-executor-parity
+          path: ci-artifacts/
+          if-no-files-found: warn
+          retention-days: 90

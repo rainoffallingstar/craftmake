@@ -1,0 +1,30 @@
+import os
+
+SAMPLES = config.get("samples", ["sampleA", "sampleB"])
+
+rule all:
+    input:
+        "output/summary.tsv"
+
+rule sample_task:
+    output:
+        "output/samples/{sample}.tsv"
+    shell:
+        """
+        mkdir -p "$(dirname '{output}')"
+        printf 'sample\tvalue\n%s\t100\n' '{wildcards.sample}' > '{output}'
+        """
+
+rule aggregate_task:
+    input:
+        expand("output/samples/{sample}.tsv", sample=SAMPLES)
+    output:
+        "output/summary.tsv"
+    shell:
+        """
+        mkdir -p "$(dirname '{output}')"
+        printf 'sample\tvalue\n' > '{output}'
+        for file in {input}; do
+            tail -n +2 "$file" >> '{output}'
+        done
+        """

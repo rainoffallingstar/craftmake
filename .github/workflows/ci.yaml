@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
+    branches: [main, master]
   pull_request:
+    branches: [main, master]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -46,3 +49,12 @@ jobs:
             --legacy-config \
             --config testdata/configs/beaverrnaseqpdx-step3-check.yaml \
             --phase step3-check
+
+      - name: Upload build and test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: craftmake-ci-evidence
+          path: dist/
+          if-no-files-found: warn
+          retention-days: 90
