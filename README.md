@@ -151,6 +151,13 @@ make benchmark-pdx-scheduler
 
 The repository uses Go 1.26.x as declared in `go.mod`. Each source revision is independent from the parent `otter` checkout; update the parent gitlink only when intentionally integrating a new revision.
 
+## Continuous integration
+
+The repository includes two GitHub Actions workflows:
+
+- `.github/workflows/ci.yaml`: runs on `push`, `pull_request`, and manual dispatch. Validates tests, `go vet`, builds release archives with `make release`, verifies archive checksums, and validates automatic workflow routing. Artifacts are retained for 90 days.
+- `.github/workflows/executor-comparison.yml`: runs an executor parity test between Craftmake and Snakemake under the local execution backend, with the executor as the only differing variable. Both engines execute on identical sample fixtures (`sampleA`, `sampleB`) and shared configuration, with Snakemake invoked through `enva run --name otter-snakemake -- snakemake ...`. The workflow asserts byte-for-byte SHA-256 equivalence of all generated output tables (`output/samples/*.tsv` and `output/summary.tsv`), and uploads execution logs and comparison reports for 90 days.
+
 ## License
 
 MIT
