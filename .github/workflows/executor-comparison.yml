@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      ENVA_COMMIT: 7dc3d3681715a136e070b667535c39d30d8e1177
+      ENVA_COMMIT: f1205bfa661480e450a54f3dcb916d8c24a0856d
     steps:
       - name: Checkout craftmake
         uses: actions/checkout@v4
@@ -70,8 +70,24 @@ jobs:
       - name: Prepare shared project fixtures
         run: |
           set -euo pipefail
-          cp testdata/ci/executor_comparison/config.yaml ci-artifacts/craftmake_run/config.yaml
-          cp testdata/ci/executor_comparison/config.yaml ci-artifacts/snakemake_run/config.yaml
+          # craftmake requires `run.project_dir` to be absolute, so resolve it for each
+          # run directory instead of relying on the relative placeholder in the fixture.
+          python3 - "$GITHUB_WORKSPACE" <<'PY'
+          import pathlib
+          import sys
+
+          workspace = pathlib.Path(sys.argv[1])
+          template = (workspace / 'testdata/ci/executor_comparison/config.yaml').read_text()
+          for run_name in ('craftmake_run', 'snakemake_run'):
+              run_directory = workspace / 'ci-artifacts' / run_name
+              run_directory.mkdir(parents=True, exist_ok=True)
+              resolved = template.replace(
+                  '  project_dir: .\n', f'  project_dir: {run_directory}\n'
+              )
+              (run_directory / 'config.yaml').write_text(resolved)
+              print(f'wrote {run_directory / "config.yaml"}')
+          PY
+          grep -n 'project_dir' ci-artifacts/craftmake_run/config.yaml ci-artifacts/snakemake_run/config.yaml
 
       - name: Execute workflow under Craftmake (local backend)
         run: |
