@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      ENVA_COMMIT: d93b7fc7c82593dcaffa56f28b50aad02cca1108
+      ENVA_COMMIT: 7dc3d3681715a136e070b667535c39d30d8e1177
     steps:
       - name: Checkout craftmake
         uses: actions/checkout@v4
