@@ -19,6 +19,18 @@ def main() -> int:
     parser.add_argument("--craftmake-dir", required=True, type=Path)
     parser.add_argument("--snakemake-dir", required=True, type=Path)
     parser.add_argument("--report", required=True, type=Path)
+    parser.add_argument(
+        "--craftmake-wall-seconds",
+        type=float,
+        default=None,
+        help="wall-clock seconds for the Craftmake run",
+    )
+    parser.add_argument(
+        "--snakemake-wall-seconds",
+        type=float,
+        default=None,
+        help="wall-clock seconds for the Snakemake run",
+    )
     args = parser.parse_args()
 
     required_artifacts = [
@@ -62,15 +74,61 @@ def main() -> int:
             "bytes": cm_path.stat().st_size,
         })
 
+    # Runtime metrics. These are recorded so a reviewer can see the execution-cost relationship,
+    # but they are deliberately not asserted: a single CI sample on a shared runner cannot support
+    # a performance claim, and enforcing a ratio here would turn natural runner variance into a
+    # spurious failure. The comparison states the measured pair and the derived ratio only.
+    craftmake_wall_seconds = args.craftmake_wall_seconds
+    snakemake_wall_seconds = args.snakemake_wall_seconds
+    runtime: dict[str, object] = {
+        "measured": (
+            craftmake_wall_seconds is not None and snakemake_wall_seconds is not None
+        ),
+        "unit": "seconds",
+        "craftmake_wall_seconds": craftmake_wall_seconds,
+        "snakemake_wall_seconds": snakemake_wall_seconds,
+        "delta_seconds": None,
+        "ratio_craftmake_over_snakemake": None,
+        "faster_executor": None,
+        "asserted": False,
+    }
+    if runtime["measured"]:
+        assert craftmake_wall_seconds is not None and snakemake_wall_seconds is not None
+        runtime["delta_seconds"] = round(craftmake_wall_seconds - snakemake_wall_seconds, 3)
+        if snakemake_wall_seconds > 0:
+            runtime["ratio_craftmake_over_snakemake"] = round(
+                craftmake_wall_seconds / snakemake_wall_seconds, 4
+            )
+        runtime["faster_executor"] = (
+            "craftmake" if craftmake_wall_seconds < snakemake_wall_seconds else "snakemake"
+        )
+    report["runtime"] = runtime
+
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
+    matched_artifacts = sum(1 for entry in report["artifacts"] if entry.get("matches"))
     if report["equal"]:
-        print(f"Executor parity verified: all {len(required_artifacts)} artifacts match byte-for-byte!")
-        return 0
+        print(
+            f"Executor parity verified: all {len(required_artifacts)} artifacts match byte-for-byte."
+        )
     else:
-        print("Executor parity failure: differences found between Craftmake and Snakemake!", file=sys.stderr)
-        return 1
+        print(
+            f"Executor parity failure: {matched_artifacts}/{len(required_artifacts)} "
+            "artifacts match byte-for-byte.",
+            file=sys.stderr,
+        )
+    if runtime["measured"]:
+        print(
+            f"Runtime (single CI sample, not asserted): craftmake "
+            f"{craftmake_wall_seconds:.3f}s vs snakemake {snakemake_wall_seconds:.3f}s; "
+            f"ratio {runtime['ratio_craftmake_over_snakemake']}; "
+            f"faster: {runtime['faster_executor']}"
+        )
+    else:
+        print("Runtime: not measured for this run.")
+
+    return 0 if report["equal"] else 1
 
 
 if __name__ == "__main__":

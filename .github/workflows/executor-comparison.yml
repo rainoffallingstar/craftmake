@@ -94,6 +94,11 @@ jobs:
       - name: Execute workflow under Craftmake (local backend)
         run: |
           set -euo pipefail
+          # Time the whole executor invocation. The two runs execute the same declared workflow
+          # over the same prepared inputs on the same runner, so the pair is internally
+          # controlled; the numbers remain single-sample and must not be read as throughput
+          # benchmarks.
+          started_at="$(date +%s.%N)"
           ./ci-artifacts/craftmake run \
             --workflow "$GITHUB_WORKSPACE/testdata/ci/executor_comparison/workflow.yaml" \
             --config "$GITHUB_WORKSPACE/ci-artifacts/craftmake_run/config.yaml" \
@@ -101,13 +106,24 @@ jobs:
             --backend local \
             --max-cores 2 \
             2>&1 | tee ci-artifacts/logs/craftmake-run.log
+          finished_at="$(date +%s.%N)"
+          printf 'executor\twall_seconds\ncraftmake\t%s\n' \
+            "$(awk -v a="${started_at}" -v b="${finished_at}" 'BEGIN { printf "%.3f", b - a }')" \
+            > ci-artifacts/craftmake-wall-time.tsv
+          cat ci-artifacts/craftmake-wall-time.tsv
 
       - name: Execute workflow under Snakemake (local backend via enva)
         run: |
           set -euo pipefail
+          started_at="$(date +%s.%N)"
           .ci/enva/target/release/enva run --name otter-snakemake \
             --command "snakemake --snakefile $GITHUB_WORKSPACE/testdata/ci/executor_comparison/Snakefile --configfile $GITHUB_WORKSPACE/ci-artifacts/snakemake_run/config.yaml --directory $GITHUB_WORKSPACE/ci-artifacts/snakemake_run --cores 2" \
             2>&1 | tee ci-artifacts/logs/snakemake-run.log
+          finished_at="$(date +%s.%N)"
+          printf 'executor\twall_seconds\nsnakemake\t%s\n' \
+            "$(awk -v a="${started_at}" -v b="${finished_at}" 'BEGIN { printf "%.3f", b - a }')" \
+            > ci-artifacts/snakemake-wall-time.tsv
+          cat ci-artifacts/snakemake-wall-time.tsv
 
       - name: Compare executor outputs and assert byte-for-byte equivalence
         run: |
@@ -115,6 +131,8 @@ jobs:
           python3 testdata/ci/executor_comparison/compare_executors.py \
             --craftmake-dir ci-artifacts/craftmake_run \
             --snakemake-dir ci-artifacts/snakemake_run \
+            --craftmake-wall-seconds "$(tail -n 1 ci-artifacts/craftmake-wall-time.tsv | cut -f2)" \
+            --snakemake-wall-seconds "$(tail -n 1 ci-artifacts/snakemake-wall-time.tsv | cut -f2)" \
             --report ci-artifacts/evidence/executor-parity-report.json \
             2>&1 | tee ci-artifacts/logs/comparison.log
 
@@ -143,14 +161,44 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
+          # Report the measured comparison: artifact equality plus the recorded runtime pair.
+          bash scripts/ci/summary-field.sh \
+            ci-artifacts/evidence/executor-parity-report.json#equal \
+            ci-artifacts/evidence/executor-parity-report.json#runtime.craftmake_wall_seconds \
+            ci-artifacts/evidence/executor-parity-report.json#runtime.snakemake_wall_seconds \
+            ci-artifacts/evidence/executor-parity-report.json#runtime.delta_seconds \
+            ci-artifacts/evidence/executor-parity-report.json#runtime.ratio_craftmake_over_snakemake \
+            ci-artifacts/evidence/executor-parity-report.json#runtime.faster_executor \
+            > ci-artifacts/evidence/summary-fields.txt 2>/dev/null || true
+          field() { rg -N "^$1=" ci-artifacts/evidence/summary-fields.txt 2>/dev/null | head -n 1 | cut -d= -f2- || echo "-"; }
+          artifacts_total="$(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1]))['artifacts']))" ci-artifacts/evidence/executor-parity-report.json 2>/dev/null || echo '-')"
+          artifacts_matched="$(python3 -c "import json,sys; print(sum(1 for a in json.load(open(sys.argv[1]))['artifacts'] if a.get('matches')))" ci-artifacts/evidence/executor-parity-report.json 2>/dev/null || echo '-')"
+          craftmake_seconds="$(field craftmake_wall_seconds)"
+          snakemake_seconds="$(field snakemake_wall_seconds)"
+          if [ "${craftmake_seconds}" != "-" ] && [ "${snakemake_seconds}" != "-" ]; then
+            runtime_pair="craftmake ${craftmake_seconds}s vs snakemake ${snakemake_seconds}s"
+            runtime_ratio="$(field ratio_craftmake_over_snakemake) (craftmake / snakemake)"
+            runtime_delta="$(field delta_seconds) s"
+            runtime_faster="$(field faster_executor)"
+          else
+            runtime_pair="not measured"
+            runtime_ratio="-"
+            runtime_delta="-"
+            runtime_faster="-"
+          fi
           bash scripts/ci/job-summary.sh \
             --verdict "${{ job.status }}" \
             --title "Craftmake — executor parity vs Snakemake" \
-            --checked "Runs the same declared workflow twice on identical project fixtures — once under the Craftmake local backend and once under Snakemake (installed through enva) — then compares the executor outputs." \
-            --check "Craftmake local backend run|workflow completes|see step log|-" \
-            --check "Snakemake local backend run|workflow completes|see step log|-" \
-            --check "Executor output equivalence|declared outputs byte-for-byte equal|see step log|-" \
-            --metric "Executors compared|craftmake (local) vs snakemake via enva" \
+            --checked "Runs the same declared workflow twice on identical project fixtures — once under the Craftmake local backend and once under Snakemake installed through enva — then compares the declared outputs byte for byte and records the wall-clock cost of each executor." \
+            --check "Declared outputs byte-for-byte equal|all 3 outputs (sampleA.tsv, sampleB.tsv, summary.tsv)|${artifacts_matched} of ${artifacts_total} match|$(field equal)" \
+            --check "Both executors complete|workflow succeeds under each|see step log|-" \
+            --check "Runtime measured for both arms|wall-clock seconds recorded|${runtime_pair}|-" \
+            --check "Runtime ratio craftmake/snakemake|informational, not asserted|${runtime_ratio}|-" \
+            --check "Runtime delta|informational, not asserted|${runtime_delta}|-" \
+            --metric "Faster executor in this sample|${runtime_faster} (informational only)" \
+            --metric "Compared executors|craftmake local backend vs snakemake 9.x via enva" \
+            --metric "Comparator schema|otter.executor-comparison/v1" \
             --artifact "craftmake-snakemake-executor-parity" \
-            --limit "Executor and completion-path equivalence on small shared fixtures. It is not a production-scale throughput comparison and not a fresh multi-input scientific matrix." \
-            --note "Snakemake is installed through enva, so both executors run against the same pinned toolchain contract."
+            --limit "Output equality is asserted and is the point of this gate. The runtime figures are a single CI sample on a shared runner recorded for visibility only: they are not asserted, not a throughput benchmark, and must not be generalized beyond this fixture." \
+            --limit "Two executors on small shared fixtures. This is completion-path and output-equivalence evidence, not a fresh multi-input legacy-equivalent scientific matrix." \
+            --note "Snakemake is installed through enva, so both executors run against the same pinned toolchain contract and the comparison is internally controlled."
