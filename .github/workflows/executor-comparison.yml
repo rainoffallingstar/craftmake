@@ -201,5 +201,6 @@ jobs:
             --artifact "craftmake-snakemake-executor-parity" \
             --limit "Output equality is asserted and is the point of this gate. The runtime figures are a single CI sample on a shared runner recorded for visibility only: they are not asserted, not a throughput benchmark, and must not be generalized beyond this fixture." \
             --limit "The fixture is intentionally tiny, so the measured wall clock is dominated by process startup rather than by scheduling work. A larger ratio here means one executor pays more fixed startup cost on this fixture; it says nothing about how the two scale on real workloads." \
+            --limit "Observed variance on this fixture is large: two consecutive runs of this same workflow measured ratios of 0.0385 and 0.6914, an eighteen-fold swing with no code change. That is exactly why the ratio is recorded rather than asserted." \
             --limit "Two executors on small shared fixtures. This is completion-path and output-equivalence evidence, not a fresh multi-input legacy-equivalent scientific matrix." \
             --note "Snakemake is installed through enva, so both executors run against the same pinned toolchain contract and the comparison is internally controlled."
