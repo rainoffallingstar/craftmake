@@ -138,3 +138,19 @@ jobs:
           path: ci-artifacts/
           if-no-files-found: warn
           retention-days: 90
+
+      - name: Job summary
+        if: always()
+        continue-on-error: true
+        run: |
+          bash scripts/ci/job-summary.sh \
+            --verdict "${{ job.status }}" \
+            --title "Craftmake — executor parity vs Snakemake" \
+            --checked "Runs the same declared workflow twice on identical project fixtures — once under the Craftmake local backend and once under Snakemake (installed through enva) — then compares the executor outputs." \
+            --check "Craftmake local backend run|workflow completes|see step log|-" \
+            --check "Snakemake local backend run|workflow completes|see step log|-" \
+            --check "Executor output equivalence|declared outputs byte-for-byte equal|see step log|-" \
+            --metric "Executors compared|craftmake (local) vs snakemake via enva" \
+            --artifact "craftmake-snakemake-executor-parity" \
+            --limit "Executor and completion-path equivalence on small shared fixtures. It is not a production-scale throughput comparison and not a fresh multi-input scientific matrix." \
+            --note "Snakemake is installed through enva, so both executors run against the same pinned toolchain contract."
